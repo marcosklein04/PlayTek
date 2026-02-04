@@ -1,6 +1,5 @@
 from django.core.management.base import BaseCommand
-from games_catalog.models import Juego, Etiqueta, JuegoEtiqueta
-
+from games_catalog.models import Game, Tag
 
 CATALOGO = [
     {
@@ -65,35 +64,32 @@ CATALOGO = [
     },
 ]
 
-
 class Command(BaseCommand):
     help = "Carga / actualiza el catálogo de juegos."
 
     def handle(self, *args, **options):
         for item in CATALOGO:
-            tags = item.pop("tags", [])
+            tag_names = item.pop("tags", [])
 
-            juego, _ = Juego.objects.update_or_create(
+            juego, _ = Game.objects.update_or_create(
                 slug=item["slug"],
                 defaults={
-                    "nombre": item["nombre"],
-                    "descripcion": item["descripcion"],
-                    "imagen_portada_url": item["imagen_portada_url"],
-                    "etiqueta_precio": item["etiqueta_precio"],
-                    "costo_por_partida": item["costo_por_partida"],
-                    "destacado": item["destacado"],
-                    "habilitado": True,
+                    "name": item["nombre"],
+                    "description": item["descripcion"],
+                    "cover_image_url": item["imagen_portada_url"],
+                    "price_label": item["etiqueta_precio"],
+                    "cost_per_play": item["costo_por_partida"],
+                    "is_featured": item["destacado"],
+                    "is_enabled": True,
                 },
             )
 
-            # Crear etiquetas y asegurar relación en tabla intermedia
-            for t in tags:
-                etiqueta, _ = Etiqueta.objects.get_or_create(nombre=t)
+            tags_objs = []
+            for t in tag_names:
+                tag, _ = Tag.objects.get_or_create(name=t)
+                tags_objs.append(tag)
 
-                # asegura fila en games_catalog_game_tags
-                JuegoEtiqueta.objects.get_or_create(
-                    juego=juego,
-                    etiqueta=etiqueta,
-                )
+            # escribe en games_catalog_game_tags
+            juego.tags.set(tags_objs)
 
         self.stdout.write(self.style.SUCCESS("Catálogo cargado/actualizado OK."))
