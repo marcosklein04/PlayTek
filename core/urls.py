@@ -27,4 +27,5 @@ urlpatterns = [
     path("api/", include("api_auth.urls")),
     path("api/", include("games_catalog.urls")),
     path("api/", include("wallet.urls")),
+    path("", include("hangman.urls")),
 ]

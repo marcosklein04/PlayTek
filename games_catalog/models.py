@@ -3,6 +3,7 @@ from django.conf import settings
 from django.db import models
 
 
+
 # ============================================================
 # MODELOS REALES (INGLÉS) → son los que “mandan” en DB y migraciones
 # ============================================================
@@ -24,6 +25,7 @@ class Game(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     cover_image_url = models.URLField(blank=True)
+    runner_url = models.URLField(blank=True, default="") 
     price_label = models.CharField(max_length=40, blank=True)
     cost_per_play = models.PositiveIntegerField(default=1)
 
@@ -79,7 +81,11 @@ class GameSession(models.Model):
 
     cost_charged = models.PositiveIntegerField(default=0)
     client_state = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
 
+    # alineado a la migración 0008
+    runner_token = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    
     class Meta:
         db_table = "games_catalog_gamesession"
         verbose_name = "Sesión de juego"
@@ -89,7 +95,6 @@ class GameSession(models.Model):
     def __str__(self) -> str:
         username = getattr(self.user, "username", str(self.user))
         return f"{username} - {self.game.slug} - {self.status}"
-
 
 # ============================================================
 # PROXIES (ESPAÑOL) → NO crean tablas, NO generan migraciones
