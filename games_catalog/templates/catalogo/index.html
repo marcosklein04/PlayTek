@@ -1,0 +1,32 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="{% static 'catalogo/style.css' %}">
+
+    <title>Catálogo de Juegos</title>
+</head>
+<body>
+
+    <h1>Catálogo de juegos</h1>
+
+    <section class="tokenBox">
+        <label>Bearer Token</label>
+        <input id="tokenInput" placeholder="Pegá tu Bearer token acá" />
+        <button id="saveToken">Guardar</button>
+        <button id="clearToken">Borrar</button>
+        <div id="tokenStatus"></div>
+    </section>
+
+    <section>
+        <h2>Juegos</h2>
+        <div id="games" class="grid">Cargando...</div>
+    </section>
+
+    <script src="{% static 'catalogo/catalogo.js' %}"></script>
+
+    
+</body>
+</html>

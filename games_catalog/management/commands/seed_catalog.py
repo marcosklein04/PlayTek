@@ -93,19 +93,20 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         for item in CATALOGO:
-            tags = item.pop("tags", [])
+            data = item.copy()                 
+            tags = data.pop("tags", [])
 
             juego, _ = Game.objects.update_or_create(
-                slug=item["slug"],
+                slug=data["slug"],
                 defaults={
-                    "name": item["nombre"],
-                    "description": item["descripcion"],
-                    "cover_image_url": item["imagen_portada_url"],
-                    "runner_url": item.get("runner_url", ""),
-                    "price_label": item["etiqueta_precio"],
-                    "cost_per_play": item["costo_por_partida"],
-                    "is_featured": item["destacado"],
-                    "is_enabled": item.get("habilitado", True),
+                    "name": data["nombre"],
+                    "description": data["descripcion"],
+                    "cover_image_url": data.get("imagen_portada_url", ""),
+                    "runner_url": data.get("runner_url", ""),
+                    "price_label": data["etiqueta_precio"],
+                    "cost_per_play": data["costo_por_partida"],
+                    "is_featured": data["destacado"],
+                    "is_enabled": data.get("habilitado", True),
                 },
             )
 

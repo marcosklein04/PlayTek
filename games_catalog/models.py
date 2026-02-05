@@ -25,7 +25,7 @@ class Game(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     cover_image_url = models.URLField(blank=True)
-    runner_url = models.URLField(blank=True, default="") 
+    runner_url = models.CharField(max_length=255, blank=True, default="") 
     price_label = models.CharField(max_length=40, blank=True)
     cost_per_play = models.PositiveIntegerField(default=1)
 

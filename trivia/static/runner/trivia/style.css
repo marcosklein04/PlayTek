@@ -1,0 +1,102 @@
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  margin: 0;
+  background: #0b1020;
+  color: #e9eefc;
+}
+
+.wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.card {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.pill {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.14);
+  font-size: 14px;
+}
+
+.qtext {
+  font-size: 18px;
+  margin: 14px 0;
+  line-height: 1.35;
+}
+
+.opts {
+  display: grid;
+  gap: 10px;
+}
+
+button.opt {
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  color: #e9eefc;
+  cursor: pointer;
+}
+
+button.opt:hover {
+  background: rgba(255,255,255,0.11);
+}
+
+button.opt:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.msg {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.msg.ok {
+  color: #7CFFB2;
+}
+
+.msg.bad {
+  color: #FF8A8A;
+}
+
+.footer {
+  margin-top: 14px;
+}
+
+.btn {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.10);
+  color: #e9eefc;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: rgba(255,255,255,0.14);
+}

@@ -1,0 +1,38 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trivia</title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="{% static 'runner/trivia/style.css' %}">
+</head>
+<body>
+
+  <div class="wrap">
+    <div class="card">
+
+      <div class="row">
+        <h1 class="title">Trivia</h1>
+        <div class="pill" id="progress">0 / 0</div>
+      </div>
+
+      <p class="qtext" id="question-text">Cargando pregunta…</p>
+
+      <div class="opts" id="options"></div>
+
+      <div class="msg" id="message"></div>
+
+      <div class="footer">
+        <button class="btn" id="next-btn" style="display:none;">Siguiente</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script src="{% static 'runner/trivia/trivia.js' %}"></script>
+</body>
+</html>

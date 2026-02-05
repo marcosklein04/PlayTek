@@ -1,21 +1,22 @@
 import json
 import secrets
-from urllib.parse import urlencode, urlsplit, urlunsplit
-
+from urllib.parse import urlencode, urlsplit, urlunsplit, urljoin
+from urllib.parse import urljoin
 from django.db import transaction
 from django.db.models import F
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from django.shortcuts import render
 
 from api_auth.auth import token_required
 from wallet.models import Wallet, LedgerEntry
 from .models import Game, GameSession
 
 
+def _token_ok(a: str, b: str) -> bool:
+    return bool(a) and bool(b) and secrets.compare_digest(a, b)
 
 
 def _iso(dt):
@@ -31,20 +32,23 @@ def _leer_json(request):
         return None, JsonResponse({"error": "json_invalido"}, status=400)
 
 
-def _build_runner_url(juego: Game, sesion: GameSession, user_id: int) -> str:
+def _build_runner_url(request, juego: Game, sesion: GameSession, user_id: int) -> str:
     if not juego.runner_url:
         return ""
 
-    parts = urlsplit(juego.runner_url)
+    # 1) normalizar base (absoluta si venía relativa)
+    base = juego.runner_url
+    if base.startswith("/"):
+        base = urljoin(request.build_absolute_uri("/"), base.lstrip("/"))
+
+    parts = urlsplit(base)
     base_query = parts.query
 
-    extra = urlencode({
-        "session_id": str(sesion.id),
-        "user_id": str(user_id),
-        "session_token": sesion.runner_token,
-    })
-
+    extra = urlencode(
+        {"session_id": str(sesion.id), "user_id": str(user_id), "session_token": sesion.runner_token}
+    )
     query = f"{base_query}&{extra}" if base_query else extra
+
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
 
 
@@ -98,8 +102,7 @@ def _serializar_sesion_resumen(sesion: GameSession):
 @require_GET
 def catalogo_juegos(request):
     juegos = (
-        Game.objects
-        .filter(is_enabled=True)
+        Game.objects.filter(is_enabled=True)
         .order_by("-is_featured", "name")
         .prefetch_related("tags")
     )
@@ -110,12 +113,13 @@ def catalogo_juegos(request):
 @token_required
 def mis_sesiones(request):
     sesiones = (
-        GameSession.objects
-        .filter(user=request.user)
+        GameSession.objects.filter(user=request.user)
         .select_related("game")
         .order_by("-started_at")
     )
-    return JsonResponse({"resultados": [_serializar_sesion_resumen(s) for s in sesiones]}, status=200)
+    return JsonResponse(
+        {"resultados": [_serializar_sesion_resumen(s) for s in sesiones]}, status=200
+    )
 
 
 @require_GET
@@ -123,7 +127,7 @@ def mis_sesiones(request):
 def obtener_sesion(request, session_id):
     sesion = get_object_or_404(GameSession, id=session_id, user=request.user)
     data = _serializar_sesion(sesion)
-    data["juego"]["runner_url"] = _build_runner_url(sesion.game, sesion, user.id)
+    data["juego"]["runner_url"] = _build_runner_url(request, sesion.game, sesion, request.user.id)
     return JsonResponse(data, status=200)
 
 
@@ -145,7 +149,11 @@ def iniciar_juego(request, slug: str):
 
         if billetera.balance < costo:
             return JsonResponse(
-                {"error": "saldo_insuficiente", "saldo": billetera.balance, "costo": costo},
+                {
+                    "error": "saldo_insuficiente",
+                    "saldo": billetera.balance,
+                    "costo": costo,
+                },
                 status=402,
             )
 
@@ -175,7 +183,7 @@ def iniciar_juego(request, slug: str):
         )
 
         billetera.refresh_from_db(fields=["balance"])
-        runner_final = _build_runner_url(juego, sesion, request.user.id)
+        runner_final = _build_runner_url(request, juego, sesion, request.user.id)
 
     return JsonResponse(
         {
@@ -197,13 +205,18 @@ def runner_obtener_sesion(request, session_id):
         return JsonResponse({"error": "user_id_requerido"}, status=400)
 
     user_id = int(user_id)
-    sesion = get_object_or_404(GameSession, id=session_id, user_id=user_id)
 
-    if not sesion.runner_token or sesion.runner_token != token:
+    # Evita enumeración: si no existe, devolvemos 401 igual.
+    try:
+        sesion = GameSession.objects.get(id=session_id, user_id=user_id)
+    except GameSession.DoesNotExist:
+        return JsonResponse({"error": "session_token_invalido"}, status=401)
+
+    if not _token_ok(sesion.runner_token, token):
         return JsonResponse({"error": "session_token_invalido"}, status=401)
 
     data = _serializar_sesion(sesion)
-    data["juego"]["runner_url"] = _build_runner_url(sesion.game, sesion, user_id)
+    data["juego"]["runner_url"] = _build_runner_url(request, sesion.game, sesion, user_id)
     return JsonResponse(data, status=200)
 
 
@@ -248,7 +261,7 @@ def finalizar_sesion(request, session_id):
     sesion.save(update_fields=update_fields)
 
     data = _serializar_sesion(sesion)
-    data["juego"]["runner_url"] = _build_runner_url(sesion.game, sesion, request.user.id)
+    data["juego"]["runner_url"] = _build_runner_url(request, sesion.game, sesion, request.user.id)
     return JsonResponse(data, status=200)
 
 
@@ -268,7 +281,7 @@ def runner_finalizar_sesion(request, session_id):
     user_id = int(user_id)
     sesion = get_object_or_404(GameSession, id=session_id, user_id=user_id)
 
-    if not sesion.runner_token or sesion.runner_token != token:
+    if not _token_ok(sesion.runner_token, token):
         return JsonResponse({"error": "session_token_invalido"}, status=401)
 
     estado_cliente = payload.get("estado_cliente") or payload.get("client_state")
@@ -288,7 +301,10 @@ def runner_finalizar_sesion(request, session_id):
     update_fields = ["status", "ended_at"]
 
     if isinstance(estado_cliente, dict):
-        sesion.client_state = estado_cliente
+        current = sesion.client_state or {}
+        # merge shallow por juego (hangman, trivia, etc.)
+        current.update(estado_cliente)
+        sesion.client_state = current
         update_fields.append("client_state")
 
     if isinstance(result, dict):
@@ -302,6 +318,25 @@ def runner_finalizar_sesion(request, session_id):
     return JsonResponse(_serializar_sesion(sesion), status=200)
 
 
-
+@require_GET
 def runner_hangman_page(request):
+    session_id = request.GET.get("session_id")
+    token = request.GET.get("session_token") or ""
+    user_id = request.GET.get("user_id")
+
+    if not session_id or not user_id or not str(user_id).isdigit():
+        return JsonResponse({"error": "parametros_invalidos"}, status=400)
+
+    try:
+        sesion = GameSession.objects.get(id=session_id, user_id=int(user_id), game__slug="hangman")
+    except GameSession.DoesNotExist:
+        return JsonResponse({"error": "session_token_invalido"}, status=401)
+
+    if not _token_ok(sesion.runner_token, token):
+        return JsonResponse({"error": "session_token_invalido"}, status=401)
+
+    # opcional: impedir entrar a sesiones finalizadas
+    if sesion.status != GameSession.Status.ACTIVE:
+        return JsonResponse({"error": "sesion_no_activa", "estado": sesion.status}, status=409)
+
     return render(request, "runner/hangman/index.html")
