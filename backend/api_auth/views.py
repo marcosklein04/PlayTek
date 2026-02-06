@@ -3,8 +3,23 @@ from django.contrib.auth import authenticate
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
-
 from .models import ApiToken
+
+
+
+def _company_name_for_user(user):
+    company = getattr(getattr(user, "profile", None), "company", None)
+    if not company:
+        return ""
+    # soporta distintos nombres de campo
+    return (
+        getattr(company, "nombre", None)
+        or getattr(company, "name", None)
+        or getattr(company, "nombre_empresa", None)
+        or str(company)
+    )
+
+
 
 @csrf_exempt
 @require_POST
@@ -25,4 +40,15 @@ def login(request):
         return JsonResponse({"error": "invalid_credentials"}, status=401)
 
     token = ApiToken.objects.create(user=user, key=ApiToken.generate_key())
-    return JsonResponse({"token": token.key})
+
+    return JsonResponse({
+        "token": token.key,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email or "",
+            "name": user.get_full_name() or user.username,
+            "organization": _company_name_for_user(user),
+            "role": "admin" if user.is_superuser else "client",
+        }
+    })

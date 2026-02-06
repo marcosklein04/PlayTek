@@ -8,19 +8,13 @@ from django.utils import timezone
 from django.db.models import IntegerField
 from django.db.models.functions import Cast
 from django.db.models.expressions import RawSQL
-
-
-
 from .models import Question
-
 from games_catalog.models import GameSession
 
 
 def _require_runner_session(request, body=None):
     """
     Valida session_id, user_id, session_token para endpoints runner.
-    - Para GET: usa querystring
-    - Para POST JSON: pasale body (dict) y lo toma de ahí
     """
     if body is None:
         session_id = request.GET.get("session_id") or request.POST.get("session_id")
@@ -97,14 +91,21 @@ def runner_trivia_next(request):
     )
 
     if not q:
+        result = {
+        "score": trivia.get("score", 0),
+        "answered": trivia.get("answered", 0),
+        "correct": trivia.get("correct", 0),
+    }
+
+        sesion.status = GameSession.Status.FINISHED
+        sesion.ended_at = timezone.now()
+        sesion.result = result
+        sesion.save(update_fields=["status", "ended_at", "result"])
+
         return JsonResponse(
             {
                 "finished": True,
-                "result": {
-                    "score": trivia.get("score", 0),
-                    "answered": trivia.get("answered", 0),
-                    "correct": trivia.get("correct", 0),
-                },
+                "result": result,
             },
             status=200
         )
@@ -301,5 +302,5 @@ def _require_runner_session_allow_finished(request):
     if not sesion.runner_token or sesion.runner_token != token:
         return None, JsonResponse({"error": "session_token_invalido"}, status=401)
 
-    # 🔥 ACÁ está la diferencia: NO validamos status
+    #ACÁ está la diferencia: NO validamos status
     return sesion, None
