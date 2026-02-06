@@ -1,0 +1,38 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{% static 'hangman/style.css' %}">
+    <title>Ahorcado</title>
+</head>
+<body>
+
+    <h1>Ahorcado</h1>
+    <div id="hint"></div>
+    <div id="statusMsg"></div>
+
+    <div id="word"></div>
+    <div id="wrong"></div>
+    <div>Vidas: <span id="lives"></span></div>
+
+    <div id="controls">
+       <input id="inputLetter" maxlength="1" />
+        <button id="btnGuess">Probar</button>
+        <button id="btnRestart">Reiniciar</button>
+    </div>
+    
+
+    <!-- SESSION inyectada desde runner_url -->
+    <script>
+        const SESSION = {
+            sessionId: "{{ request.GET.session_id }}",
+            userId: "{{ request.GET.user_id }}",
+            sessionToken: "{{ request.GET.session_token }}"
+        };
+    </script>
+
+        <script src="{% static 'hangman/hangman.js' %}"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{% static 'trivia/style.css' %}">
+    <title>Trivia</title>
+</head>
+<body>
+
+    <h1>Trivia Runner</h1>
+
+    <div id="status"></div>
+
+    <div id="questionBox" class="card">
+        <div id="questionText"></div>
+        <div id="choices"></div>
+    </div>
+
+    <div class="actions">
+        <button id="btnNext">Siguiente</button>
+    </div>
+
+    <script>
+        // solo inyectamos SESSION; lógica en archivo JS
+        window.SESSION = {
+        sessionId: new URLSearchParams(location.search).get("session_id"),
+        userId: new URLSearchParams(location.search).get("user_id"),
+        sessionToken: new URLSearchParams(location.search).get("session_token"),
+        };
+    </script>
+    <script src="{% static 'trivia/trivia.js' %}"></script>
+    
+</body>
+</html>

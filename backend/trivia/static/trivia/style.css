@@ -1,0 +1,20 @@
+body 
+{ 
+    font-family: system-ui, Arial, sans-serif; padding: 24px; 
+}
+.card 
+{ 
+    padding: 16px; background: #f6f6f6; border-radius: 10px; margin: 12px 0; 
+}
+#choices 
+{
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; 
+}
+button 
+{ 
+    padding: 10px 12px; cursor: pointer; 
+}
+#status 
+{ 
+    margin: 10px 0; font-weight: 600; 
+}
