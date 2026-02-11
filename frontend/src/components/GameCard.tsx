@@ -6,7 +6,7 @@ import { Game } from '@/types';
 
 interface GameCardProps {
   game: Game;
-  onContract: (gameId: string) => void;
+  onContract?: (gameId: string) => void; 
   onViewDetails: (game: Game) => void;
   isContracted?: boolean;
   index?: number;
@@ -112,10 +112,10 @@ export function GameCard({ game, onContract, onViewDetails, isContracted, index 
             variant={isContracted ? "secondary" : "glow"}
             size="sm"
             className="flex-1"
-            onClick={() => onContract(game.id)}
-            disabled={isContracted}
+            onClick={() => onContract && onContract(game.id)}
+            disabled={!onContract}
           >
-            {isContracted ? 'Contratado' : 'Contratar'}
+            Jugar
           </Button>
         </div>
       </div>

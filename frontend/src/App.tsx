@@ -10,7 +10,10 @@ import Dashboard from "./pages/Dashboard";
 import Catalog from "./pages/Catalog";
 import MyGames from "./pages/MyGames";
 import Settings from "./pages/Settings";
+import BuyCredits from "./pages/BuyCredits"; 
 import NotFound from "./pages/NotFound";
+import AdminCreditPacks from "./pages/admin/AdminCreditPacks";
+
 
 const queryClient = new QueryClient();
 
@@ -44,14 +47,46 @@ function AppRoutes() {
           <MyGames />
         </ProtectedRoute>
       } />
-      <Route path="/settings" element={
-        <ProtectedRoute>
-          <Settings />
-        </ProtectedRoute>
-      } />
+      {/* ✅ NUEVO: Comprar créditos */}
+      <Route
+        path="/buy-credits"
+        element={
+          <ProtectedRoute>
+            <BuyCredits />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/credit-packs"
+        element={
+          <AdminRoute>
+            <AdminCreditPacks />
+          </AdminRoute>
+        }
+      />
+
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Settings />
+          </ProtectedRoute>
+        }
+      />
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useAuth();
+
+  if (!isAuthenticated) return <Navigate to="/auth" replace />;
+  if (user?.role !== "admin") return <Navigate to="/dashboard" replace />;
+
+  return <>{children}</>;
 }
 
 const App = () => (

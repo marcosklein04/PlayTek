@@ -148,3 +148,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
 ]
+
+MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
+MP_SANDBOX = os.getenv("MP_SANDBOX", "false").lower() == "true"
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:8080")

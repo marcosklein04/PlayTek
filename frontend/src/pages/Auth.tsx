@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Building2, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
@@ -8,6 +8,9 @@ import { Label } from '@/components/ui/label';
 import { PlaytekLogo } from '@/components/PlaytekLogo';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { title } from 'process';
+import { Description } from '@radix-ui/react-toast';
+
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
@@ -20,35 +23,58 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const { login, register } = useAuth();
+  const { login, register, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      if (mode === 'login') {
+      if (mode === "login") {
         const success = await login(email, password);
         if (success) {
-          toast({ title: '¡Bienvenido!', description: 'Has iniciado sesión correctamente.' });
-          navigate('/dashboard');
+          toast({
+            title: "¡Bienvenido!",
+            description: "Has iniciado sesión correctamente.",
+          });
+          // ✅ NO navigate acá (lo hace el useEffect)
         } else {
-          toast({ title: 'Error', description: 'Credenciales incorrectas.', variant: 'destructive' });
+          toast({
+            title: "Error",
+            description: "Credenciales incorrectas.",
+            variant: "destructive",
+          });
         }
-      } else if (mode === 'register') {
+      } else if (mode === "register") {
         const success = await register(email, password, organization, name);
         if (success) {
-          toast({ title: '¡Cuenta creada!', description: 'Tu cuenta ha sido creada exitosamente.' });
-          navigate('/dashboard');
+          toast({
+            title: "¡Cuenta creada!",
+            description: "Tu cuenta ha sido creada exitosamente.",
+          });
+          // ✅ NO navigate acá (lo hace el useEffect)
         } else {
-          toast({ title: 'Error', description: 'No se pudo crear la cuenta.', variant: 'destructive' });
+          toast({
+            title: "Error",
+            description: "No se pudo crear la cuenta.",
+            variant: "destructive",
+          });
         }
-      } else if (mode === 'forgot') {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        toast({ title: 'Email enviado', description: 'Revisa tu bandeja de entrada para recuperar tu contraseña.' });
-        setMode('login');
+      } else if (mode === "forgot") {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        toast({
+          title: "Email enviado",
+          description: "Revisa tu bandeja de entrada para recuperar tu contraseña.",
+        });
+        setMode("login");
       }
     } finally {
       setIsLoading(false);
@@ -176,13 +202,13 @@ export default function Auth() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="user">Usuario</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
-                      id="email"
-                      type="email"
-                      placeholder="tu@email.com"
+                      id="user"
+                      type="text"
+                      placeholder="usuario"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10"

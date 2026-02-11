@@ -1,0 +1,146 @@
+// src/components/PurchaseFlowModal.tsx
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { Game } from "@/types";
+
+type Props = {
+  game: Game | null;
+  open: boolean;
+  onClose: () => void;
+  onPurchased?: () => void;
+};
+
+export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"dates" | "confirm" | "loading" | "success">("dates");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [result, setResult] = useState<any>(null);
+
+  const canContinue = useMemo(() => {
+    if (!start || !end) return false;
+    return new Date(start) <= new Date(end);
+  }, [start, end]);
+
+  const reset = () => {
+    setStep("dates");
+    setStart("");
+    setEnd("");
+    setResult(null);
+  };
+
+  const closeAll = () => {
+    reset();
+    onClose();
+  };
+
+  const submitPurchase = async () => {
+    if (!game) return;
+
+    // ✅ Por ahora: si no hay créditos, mandamos a comprar créditos
+    toast({
+      title: "Te faltan créditos",
+      description: "Comprá créditos para poder iniciar partidas.",
+      variant: "destructive",
+    });
+
+    closeAll();
+    window.location.href = "/buy-credits";
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => (!v ? closeAll() : null)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{game ? `Contratar: ${game.name}` : "Contratar"}</DialogTitle>
+        </DialogHeader>
+
+        {step === "dates" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Elegí las fechas en las que se va a jugar en el evento.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="text-sm">Inicio</label>
+                <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Fin</label>
+                <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={closeAll}>
+                Cancelar
+              </Button>
+              <Button variant="glow" disabled={!canContinue} onClick={() => setStep("confirm")}>
+                Continuar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "confirm" && (
+          <div className="space-y-4">
+            <p className="text-sm">
+              Vas a contratar <b>{game?.name}</b> desde <b>{start}</b> hasta <b>{end}</b>.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setStep("dates")}>
+                Atrás
+              </Button>
+              <Button variant="glow" onClick={submitPurchase}>
+                Confirmar contratación
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "loading" && (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            Procesando contratación...
+          </div>
+        )}
+
+        {step === "success" && (
+          <div className="space-y-4">
+            <div className="text-sm">✅ Contratación realizada.</div>
+
+            {result?.trivia_credentials && (
+              <div className="rounded-lg border p-3 text-sm space-y-1">
+                <div className="font-semibold">Acceso Trivia Admin</div>
+                {result.trivia_credentials.admin_url && (
+                  <div>
+                    URL: <b>{result.trivia_credentials.admin_url}</b>
+                  </div>
+                )}
+                {result.trivia_credentials.username && (
+                  <div>
+                    Usuario: <b>{result.trivia_credentials.username}</b>
+                  </div>
+                )}
+                {result.trivia_credentials.password && (
+                  <div>
+                    Clave: <b>{result.trivia_credentials.password}</b>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="glow" onClick={closeAll}>
+                Listo
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

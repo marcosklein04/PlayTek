@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 # ============================================================
@@ -53,6 +54,93 @@ class LedgerEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind} {self.amount} (user_id={self.user_id})"
+
+
+class CreditPack(models.Model):
+    """
+    Packs que el admin configura (ej: 300 créditos = $15.000 ARS).
+    """
+    name = models.CharField(max_length=80)
+    credits = models.PositiveIntegerField()
+    price_ars = models.DecimalField(max_digits=12, decimal_places=2)
+    active = models.BooleanField(default=True)
+
+    # Para MercadoPago
+    mp_title = models.CharField(max_length=120, blank=True, default="")
+    mp_description = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "wallet_creditpack"
+        verbose_name = "Credit Pack"
+        verbose_name_plural = "Credit Packs"
+        ordering = ["credits"]
+
+    def __str__(self):
+        return f"{self.name} ({self.credits} créditos por ${self.price_ars} ARS)"
+
+
+class WalletTopup(models.Model):
+    """
+    Intento/orden de recarga. Se crea al pedir checkout.
+    Cuando MP confirma => se acredita wallet + ledger.
+    """
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        CANCELLED = "CANCELLED", "Cancelled"
+        EXPIRED = "EXPIRED", "Expired"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="wallet_topups",
+        db_column="user_id",
+    )
+    pack = models.ForeignKey(
+        CreditPack,
+        on_delete=models.PROTECT,
+        related_name="topups",
+        db_column="pack_id",
+    )
+
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    amount_ars = models.DecimalField(max_digits=12, decimal_places=2)
+    credits = models.PositiveIntegerField()
+
+    # MercadoPago tracking
+    mp_preference_id = models.CharField(max_length=120, blank=True, default="")
+    mp_payment_id = models.CharField(max_length=120, blank=True, default="")
+    checkout_url = models.URLField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "wallet_topup"
+        verbose_name = "Wallet Topup"
+        verbose_name_plural = "Wallet Topups"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["mp_preference_id"]),
+            models.Index(fields=["mp_payment_id"]),
+        ]
+
+    def __str__(self):
+        return f"Topup #{self.id} user={self.user_id} {self.credits}cr ${self.amount_ars} ({self.status})"
+
+    def mark_approved(self, mp_payment_id: str = ""):
+        if self.status == self.Status.APPROVED:
+            return
+        self.status = self.Status.APPROVED
+        self.approved_at = timezone.now()
+        if mp_payment_id:
+            self.mp_payment_id = mp_payment_id
+        self.save(update_fields=["status", "approved_at", "mp_payment_id"])
 
 
 # ============================================================
