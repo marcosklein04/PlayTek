@@ -14,7 +14,9 @@ export async function apiFetch<T>(
   const headers = new Headers(opts.headers || {});
   headers.set("Accept", "application/json");
 
-  if (opts.body && !headers.has("Content-Type")) {
+  const isFormDataBody = typeof FormData !== "undefined" && opts.body instanceof FormData;
+
+  if (opts.body && !isFormDataBody && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 

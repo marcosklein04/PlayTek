@@ -6,11 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
+  ContractAssetKey,
   TriviaCustomization,
+  deleteContractAsset,
   fetchContractCustomization,
+  launchContractByDate,
   saveContractCustomization,
-  startContractEvent,
   startContractPreview,
+  uploadContractAsset,
 } from "@/api/contracts";
 
 export default function ContractCustomization() {
@@ -23,10 +26,14 @@ export default function ContractCustomization() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [uploadingAsset, setUploadingAsset] = useState<ContractAssetKey | null>(null);
   const [gameSlug, setGameSlug] = useState("");
   const [config, setConfig] = useState<TriviaCustomization | null>(null);
 
-  const disabled = useMemo(() => !config || saving || starting, [config, saving, starting]);
+  const disabled = useMemo(
+    () => !config || saving || starting || uploadingAsset !== null,
+    [config, saving, starting, uploadingAsset],
+  );
   const watermarkOpacityLabel = useMemo(() => {
     if (!config) return "0.00";
     const value = Number(config.watermark.opacity || 0);
@@ -82,6 +89,36 @@ export default function ContractCustomization() {
     }
   };
 
+  const handleUploadAsset = async (assetKey: ContractAssetKey, file?: File | null) => {
+    if (!validId || !file) return;
+    try {
+      setUploadingAsset(assetKey);
+      const res = await uploadContractAsset(contractId, assetKey, file);
+      setConfig(res.config);
+      toast({ title: "Asset subido", description: "Se actualizo la customizacion del contrato." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo subir el archivo";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setUploadingAsset(null);
+    }
+  };
+
+  const handleDeleteAsset = async (assetKey: ContractAssetKey) => {
+    if (!validId) return;
+    try {
+      setUploadingAsset(assetKey);
+      const res = await deleteContractAsset(contractId, assetKey);
+      setConfig(res.config);
+      toast({ title: "Asset eliminado", description: "Se borro el archivo del contrato." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar el archivo";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setUploadingAsset(null);
+    }
+  };
+
   const handlePreview = async () => {
     if (!validId) return;
     try {
@@ -96,23 +133,21 @@ export default function ContractCustomization() {
     }
   };
 
-  const handleStartEvent = async () => {
+  const handleLaunchAuto = async () => {
     if (!validId) return;
     try {
       setStarting(true);
-      const res = await startContractEvent(contractId);
+      const res = await launchContractByDate(contractId);
+      if (res.preview_mode) {
+        toast({
+          title: "Modo preview",
+          description: "Fuera de fecha de evento: se abrio con watermark.",
+        });
+      }
       window.location.href = res.juego.runner_url;
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo iniciar evento";
-      if (message.includes("fuera_de_fecha_evento")) {
-        toast({
-          title: "Fuera de fecha de evento",
-          description: "Solo podes iniciar modo evento durante el rango contratado.",
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Error", description: message, variant: "destructive" });
-      }
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setStarting(false);
     }
@@ -177,6 +212,142 @@ export default function ContractCustomization() {
                     value={config.branding.watermark_text}
                     onChange={(e) => updateField(["branding", "watermark_text"], e.target.value)}
                   />
+                </div>
+              </div>
+            </section>
+
+            <section className="glass-card p-5">
+              <h2 className="text-lg font-semibold mb-2">Assets del Contrato</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Sube imagenes para logo, portada y fondos. Se guardan directo en este contrato.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Logo</p>
+                    <p className="text-xs text-muted-foreground">Formato recomendado: PNG transparente.</p>
+                  </div>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingAsset === "logo"}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      void handleUploadAsset("logo", file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  {config.branding.logo_url && (
+                    <img
+                      src={config.branding.logo_url}
+                      alt="Logo contrato"
+                      className="h-24 w-full rounded-md border border-border object-contain bg-muted/20"
+                    />
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!config.branding.logo_url || uploadingAsset === "logo"}
+                    onClick={() => void handleDeleteAsset("logo")}
+                  >
+                    {uploadingAsset === "logo" ? "Procesando..." : "Eliminar logo"}
+                  </Button>
+                </div>
+
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Imagen de bienvenida</p>
+                    <p className="text-xs text-muted-foreground">Se usa en la cabecera del runner.</p>
+                  </div>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingAsset === "welcome_image"}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      void handleUploadAsset("welcome_image", file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  {config.branding.welcome_image_url && (
+                    <img
+                      src={config.branding.welcome_image_url}
+                      alt="Welcome contrato"
+                      className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
+                    />
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!config.branding.welcome_image_url || uploadingAsset === "welcome_image"}
+                    onClick={() => void handleDeleteAsset("welcome_image")}
+                  >
+                    {uploadingAsset === "welcome_image" ? "Procesando..." : "Eliminar imagen"}
+                  </Button>
+                </div>
+
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Fondo principal</p>
+                    <p className="text-xs text-muted-foreground">Se aplica al fondo de pantalla del juego.</p>
+                  </div>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingAsset === "background"}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      void handleUploadAsset("background", file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  {config.branding.background_url && (
+                    <img
+                      src={config.branding.background_url}
+                      alt="Background contrato"
+                      className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
+                    />
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!config.branding.background_url || uploadingAsset === "background"}
+                    onClick={() => void handleDeleteAsset("background")}
+                  >
+                    {uploadingAsset === "background" ? "Procesando..." : "Eliminar fondo"}
+                  </Button>
+                </div>
+
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Fondo de contenedor</p>
+                    <p className="text-xs text-muted-foreground">Se aplica a la tarjeta de pregunta.</p>
+                  </div>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingAsset === "container_background"}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      void handleUploadAsset("container_background", file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  {config.visual.container_bg_image_url && (
+                    <img
+                      src={config.visual.container_bg_image_url}
+                      alt="Container background contrato"
+                      className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
+                    />
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!config.visual.container_bg_image_url || uploadingAsset === "container_background"}
+                    onClick={() => void handleDeleteAsset("container_background")}
+                  >
+                    {uploadingAsset === "container_background" ? "Procesando..." : "Eliminar fondo"}
+                  </Button>
                 </div>
               </div>
             </section>
@@ -399,8 +570,8 @@ export default function ContractCustomization() {
               <Button variant="outline" disabled={disabled} onClick={handlePreview}>
                 {starting ? "Abriendo..." : "Preview con watermark"}
               </Button>
-              <Button variant="hero" disabled={disabled} onClick={handleStartEvent}>
-                {starting ? "Abriendo..." : "Iniciar dia del evento"}
+              <Button variant="hero" disabled={disabled} onClick={handleLaunchAuto}>
+                {starting ? "Abriendo..." : "Iniciar segun fecha"}
               </Button>
               <Button variant="glow" disabled={disabled} onClick={handleSave}>
                 {saving ? "Guardando..." : "Guardar customizacion"}

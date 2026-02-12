@@ -1,8 +1,11 @@
 import json
+import os
 import secrets
 from copy import deepcopy
 from datetime import date
 from urllib.parse import urlencode, urlsplit, urlunsplit, urljoin
+from django.conf import settings
+from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import F
 from django.http import JsonResponse
@@ -14,6 +17,25 @@ from api_auth.auth import token_required
 from wallet.models import Wallet, LedgerEntry
 from .models import ContratoJuego, Game, GameCustomization, GameSession
 from trivia.services import pick_question_set_for_session
+
+
+CONTRACT_ASSET_FIELDS = {
+    "logo": ("branding", "logo_url"),
+    "welcome_image": ("branding", "welcome_image_url"),
+    "background": ("branding", "background_url"),
+    "container_background": ("visual", "container_bg_image_url"),
+}
+
+ALLOWED_ASSET_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif"}
+ALLOWED_ASSET_CONTENT_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/svg+xml",
+    "image/gif",
+}
+MAX_ASSET_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+
 
 def _parse_date(s: str):
     try:
@@ -115,6 +137,126 @@ def _deep_merge_dict(base: dict, patch: dict) -> dict:
     return merged
 
 
+def _nested_get(data: dict, path: tuple[str, ...]):
+    cursor = data
+    for key in path:
+        if not isinstance(cursor, dict):
+            return None
+        cursor = cursor.get(key)
+    return cursor
+
+
+def _nested_set(data: dict, path: tuple[str, ...], value):
+    cursor = data
+    for key in path[:-1]:
+        child = cursor.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[key] = child
+        cursor = child
+    cursor[path[-1]] = value
+
+
+def _to_absolute_url(request, url: str) -> str:
+    if not isinstance(url, str) or not url:
+        return ""
+
+    parts = urlsplit(url)
+    if parts.scheme and parts.netloc:
+        return url
+
+    if url.startswith("/"):
+        return request.build_absolute_uri(url)
+
+    return request.build_absolute_uri(f"/{url}")
+
+
+def _media_path_from_url(url: str) -> str | None:
+    if not isinstance(url, str) or not url:
+        return None
+
+    path = urlsplit(url).path or url
+    media_url = getattr(settings, "MEDIA_URL", "/media/")
+    if not media_url:
+        return None
+
+    if not media_url.endswith("/"):
+        media_url = f"{media_url}/"
+
+    if path.startswith(media_url):
+        storage_path = path[len(media_url):].lstrip("/")
+        return storage_path or None
+
+    return None
+
+
+def _normalize_asset_urls_for_storage(config: dict) -> dict:
+    normalized = deepcopy(config)
+    for path in CONTRACT_ASSET_FIELDS.values():
+        value = _nested_get(normalized, path)
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value:
+            _nested_set(normalized, path, "")
+            continue
+
+        storage_path = _media_path_from_url(value)
+        if storage_path:
+            media_url = getattr(settings, "MEDIA_URL", "/media/")
+            if not media_url.endswith("/"):
+                media_url = f"{media_url}/"
+            _nested_set(normalized, path, f"{media_url}{storage_path}")
+    return normalized
+
+
+def _absolutize_asset_urls_for_response(request, config: dict) -> dict:
+    output = deepcopy(config)
+    for path in CONTRACT_ASSET_FIELDS.values():
+        value = _nested_get(output, path)
+        if isinstance(value, str) and value.strip():
+            _nested_set(output, path, _to_absolute_url(request, value.strip()))
+    return output
+
+
+def _delete_managed_asset(url: str):
+    storage_path = _media_path_from_url(url)
+    if not storage_path:
+        return
+    default_storage.delete(storage_path)
+
+
+def _save_contract_asset_file(*, contract_id: int, asset_key: str, uploaded_file) -> str:
+    ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+    if ext not in ALLOWED_ASSET_EXTENSIONS:
+        ext = ".png"
+
+    filename = f"{secrets.token_hex(12)}{ext}"
+    storage_path = f"contracts/{contract_id}/{asset_key}/{filename}"
+    return default_storage.save(storage_path, uploaded_file)
+
+
+def _validate_uploaded_asset(uploaded_file):
+    if uploaded_file.size > MAX_ASSET_SIZE_BYTES:
+        return JsonResponse({"error": "archivo_demasiado_grande", "max_bytes": MAX_ASSET_SIZE_BYTES}, status=400)
+
+    ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+    if ext not in ALLOWED_ASSET_EXTENSIONS:
+        return JsonResponse(
+            {"error": "extension_no_permitida", "extensiones": sorted(ALLOWED_ASSET_EXTENSIONS)},
+            status=400,
+        )
+
+    content_type = (uploaded_file.content_type or "").lower().strip()
+    if content_type and content_type not in ALLOWED_ASSET_CONTENT_TYPES:
+        return JsonResponse(
+            {"error": "tipo_archivo_no_permitido", "content_type": content_type},
+            status=400,
+        )
+
+    return None
+
+
 def _get_user_contract_or_404(request, contract_id: int):
     return get_object_or_404(
         ContratoJuego.objects.select_related("juego", "customization"),
@@ -130,7 +272,7 @@ def _get_contract_customization_config(contrato: ContratoJuego) -> dict:
         return default_config
     if not isinstance(customization.config, dict):
         return default_config
-    return _deep_merge_dict(default_config, customization.config)
+    return _deep_merge_dict(default_config, _normalize_asset_urls_for_storage(customization.config))
 
 
 def _build_session_payload_for_contract(
@@ -140,7 +282,10 @@ def _build_session_payload_for_contract(
     preview_mode: bool,
 ):
     juego = contrato.juego
-    custom_config = _get_contract_customization_config(contrato)
+    custom_config = _absolutize_asset_urls_for_response(
+        request,
+        _get_contract_customization_config(contrato),
+    )
 
     question_set = None
     if juego.slug == "trivia":
@@ -173,6 +318,7 @@ def _build_session_payload_for_contract(
         {
             "ok": True,
             "preview_mode": bool(preview_mode),
+            "launch_mode": "preview" if preview_mode else "event",
             "contract_id": contrato.id,
             "juego": {"slug": juego.slug, "nombre": juego.name, "runner_url": runner_final},
             "id_sesion": str(sesion.id),
@@ -301,14 +447,18 @@ def obtener_customizacion_contrato(request, contract_id: int):
         contrato=contrato,
         defaults={"config": default_config},
     )
-    effective = _deep_merge_dict(default_config, customization.config or {})
+    effective = _deep_merge_dict(
+        default_config,
+        _normalize_asset_urls_for_storage(customization.config or {}),
+    )
+    effective_response = _absolutize_asset_urls_for_response(request, effective)
 
     return JsonResponse(
         {
             "ok": True,
             "contract_id": contrato.id,
             "game_slug": contrato.juego.slug,
-            "config": effective,
+            "config": effective_response,
         },
         status=200,
     )
@@ -329,6 +479,7 @@ def guardar_customizacion_contrato(request, contract_id: int):
     raw_config = body.get("config", body)
     if not isinstance(raw_config, dict):
         return JsonResponse({"error": "config_invalida"}, status=400)
+    raw_config = _normalize_asset_urls_for_storage(raw_config)
 
     replace = bool(body.get("replace", False))
     default_config = _default_customization_for_game(contrato.juego.slug)
@@ -338,9 +489,96 @@ def guardar_customizacion_contrato(request, contract_id: int):
         defaults={"config": default_config},
     )
 
-    base = default_config if replace else _deep_merge_dict(default_config, customization.config or {})
+    previous_config = _deep_merge_dict(
+        default_config,
+        _normalize_asset_urls_for_storage(customization.config or {}),
+    )
+    base = default_config if replace else previous_config
     new_config = _deep_merge_dict(base, raw_config)
+
+    for path in CONTRACT_ASSET_FIELDS.values():
+        previous_url = _nested_get(previous_config, path)
+        new_url = _nested_get(new_config, path)
+        if isinstance(previous_url, str) and previous_url and previous_url != new_url:
+            _delete_managed_asset(previous_url)
+
     customization.config = new_config
+    customization.save(update_fields=["config", "actualizado_en"])
+    response_config = _absolutize_asset_urls_for_response(request, new_config)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "contract_id": contrato.id,
+            "game_slug": contrato.juego.slug,
+            "config": response_config,
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST", "DELETE"])
+@token_required
+def gestionar_asset_contrato(request, contract_id: int, asset_key: str):
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.estado in [ContratoJuego.Estado.CANCELADO, ContratoJuego.Estado.FINALIZADO]:
+        return JsonResponse({"error": "contrato_no_editable"}, status=409)
+
+    field_path = CONTRACT_ASSET_FIELDS.get(asset_key)
+    if not field_path:
+        return JsonResponse({"error": "asset_no_soportado"}, status=404)
+
+    default_config = _default_customization_for_game(contrato.juego.slug)
+    customization, _ = GameCustomization.objects.get_or_create(
+        contrato=contrato,
+        defaults={"config": default_config},
+    )
+    config = _deep_merge_dict(
+        default_config,
+        _normalize_asset_urls_for_storage(customization.config or {}),
+    )
+
+    previous_url = _nested_get(config, field_path)
+    if request.method == "DELETE":
+        if isinstance(previous_url, str) and previous_url:
+            _delete_managed_asset(previous_url)
+        _nested_set(config, field_path, "")
+        customization.config = config
+        customization.save(update_fields=["config", "actualizado_en"])
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "contract_id": contrato.id,
+                "game_slug": contrato.juego.slug,
+                "asset_key": asset_key,
+                "asset_url": "",
+                "config": _absolutize_asset_urls_for_response(request, config),
+            },
+            status=200,
+        )
+
+    uploaded = request.FILES.get("file")
+    if not uploaded:
+        return JsonResponse({"error": "archivo_requerido", "field": "file"}, status=400)
+
+    validation_error = _validate_uploaded_asset(uploaded)
+    if validation_error:
+        return validation_error
+
+    if isinstance(previous_url, str) and previous_url:
+        _delete_managed_asset(previous_url)
+
+    saved_path = _save_contract_asset_file(
+        contract_id=contrato.id,
+        asset_key=asset_key,
+        uploaded_file=uploaded,
+    )
+    uploaded_url = default_storage.url(saved_path)
+    _nested_set(config, field_path, uploaded_url)
+
+    customization.config = config
     customization.save(update_fields=["config", "actualizado_en"])
 
     return JsonResponse(
@@ -348,7 +586,9 @@ def guardar_customizacion_contrato(request, contract_id: int):
             "ok": True,
             "contract_id": contrato.id,
             "game_slug": contrato.juego.slug,
-            "config": new_config,
+            "asset_key": asset_key,
+            "asset_url": _to_absolute_url(request, uploaded_url),
+            "config": _absolutize_asset_urls_for_response(request, config),
         },
         status=200,
     )
@@ -386,6 +626,32 @@ def preview_juego_contrato(request, contract_id: int):
         return JsonResponse({"error": "contrato_no_disponible"}, status=409)
 
     return _build_session_payload_for_contract(request, contrato, preview_mode=True)
+
+
+@csrf_exempt
+@require_POST
+@token_required
+def lanzar_juego_contrato(request, contract_id: int):
+    """
+    Lanza automaticamente:
+    - Modo evento si hoy esta dentro del rango contratado.
+    - Modo preview (con watermark) fuera del rango.
+    """
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.estado in [ContratoJuego.Estado.CANCELADO, ContratoJuego.Estado.FINALIZADO]:
+        return JsonResponse({"error": "contrato_no_disponible"}, status=409)
+
+    hoy = timezone.localdate()
+    en_rango_evento = (
+        contrato.estado == ContratoJuego.Estado.ACTIVO
+        and contrato.fecha_inicio <= hoy <= contrato.fecha_fin
+    )
+
+    return _build_session_payload_for_contract(
+        request,
+        contrato,
+        preview_mode=not en_rango_evento,
+    )
 
 
 def _token_ok(a: str, b: str) -> bool:
@@ -558,7 +824,10 @@ def iniciar_juego(request, slug: str):
         custom_config = _default_customization_for_game(juego.slug)
         preview_mode = False
         if contrato_activo:
-            custom_config = _get_contract_customization_config(contrato_activo)
+            custom_config = _absolutize_asset_urls_for_response(
+                request,
+                _get_contract_customization_config(contrato_activo),
+            )
 
         client_state = {
             "juego": juego.slug,

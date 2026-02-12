@@ -87,6 +87,12 @@ export type ContractCustomizationResponse = {
   config: TriviaCustomization;
 };
 
+export type ContractAssetKey =
+  | "logo"
+  | "welcome_image"
+  | "background"
+  | "container_background";
+
 export async function fetchMyContracts() {
   return apiFetch<{ resultados: ContractGame[] }>("/api/contracts/mine", {
     method: "GET",
@@ -106,9 +112,25 @@ export async function saveContractCustomization(contractId: number, config: Triv
   });
 }
 
+export async function uploadContractAsset(contractId: number, assetKey: ContractAssetKey, file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return apiFetch<ContractCustomizationResponse>(`/api/contracts/${contractId}/assets/${assetKey}`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteContractAsset(contractId: number, assetKey: ContractAssetKey) {
+  return apiFetch<ContractCustomizationResponse>(`/api/contracts/${contractId}/assets/${assetKey}`, {
+    method: "DELETE",
+  });
+}
+
 export type ContractStartResponse = {
   ok: boolean;
   preview_mode: boolean;
+  launch_mode: "preview" | "event";
   contract_id: number;
   juego: {
     slug: string;
@@ -126,6 +148,12 @@ export async function startContractEvent(contractId: number) {
 
 export async function startContractPreview(contractId: number) {
   return apiFetch<ContractStartResponse>(`/api/contracts/${contractId}/preview`, {
+    method: "POST",
+  });
+}
+
+export async function launchContractByDate(contractId: number) {
+  return apiFetch<ContractStartResponse>(`/api/contracts/${contractId}/launch`, {
     method: "POST",
   });
 }

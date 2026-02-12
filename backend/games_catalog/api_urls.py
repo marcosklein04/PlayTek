@@ -24,6 +24,8 @@ urlpatterns = [
     path("contracts/mine", views.mis_contratos),
     path("contracts/<int:contract_id>/start", views.iniciar_juego_contrato),
     path("contracts/<int:contract_id>/preview", views.preview_juego_contrato),
+    path("contracts/<int:contract_id>/launch", views.lanzar_juego_contrato),
     path("contracts/<int:contract_id>/customization", views.obtener_customizacion_contrato),
     path("contracts/<int:contract_id>/customization/save", views.guardar_customizacion_contrato),
+    path("contracts/<int:contract_id>/assets/<str:asset_key>", views.gestionar_asset_contrato),
 ]

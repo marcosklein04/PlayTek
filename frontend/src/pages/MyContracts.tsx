@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ContractGame, fetchMyContracts } from "@/api/contracts";
+import { ContractGame, fetchMyContracts, launchContractByDate } from "@/api/contracts";
 
 function estadoLabel(estado: string) {
   switch (estado) {
@@ -21,8 +21,13 @@ function estadoLabel(estado: string) {
   }
 }
 
+function contratoDisponible(estado: string) {
+  return estado !== "cancelado" && estado !== "finalizado";
+}
+
 export default function MyContracts() {
   const [loading, setLoading] = useState(true);
+  const [launchingId, setLaunchingId] = useState<number | null>(null);
   const [contracts, setContracts] = useState<ContractGame[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -41,6 +46,25 @@ export default function MyContracts() {
       }
     })();
   }, [toast]);
+
+  const handleLaunch = async (contractId: number) => {
+    try {
+      setLaunchingId(contractId);
+      const res = await launchContractByDate(contractId);
+      if (res.preview_mode) {
+        toast({
+          title: "Modo preview",
+          description: "Fuera del rango del evento: abrimos con watermark.",
+        });
+      }
+      window.location.href = res.juego.runner_url;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo iniciar el juego";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setLaunchingId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,6 +108,13 @@ export default function MyContracts() {
                 </div>
 
                 <div className="flex gap-2">
+                  <Button
+                    variant="hero"
+                    disabled={launchingId === contract.id || !contratoDisponible(contract.estado)}
+                    onClick={() => void handleLaunch(contract.id)}
+                  >
+                    {launchingId === contract.id ? "Abriendo..." : "Iniciar segun fecha"}
+                  </Button>
                   <Button
                     variant="glow"
                     onClick={() => navigate(`/contracts/${contract.id}/customize`)}
