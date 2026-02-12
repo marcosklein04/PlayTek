@@ -9,12 +9,12 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Catalog from "./pages/Catalog";
 import MyGames from "./pages/MyGames";
-import MyContracts from "./pages/MyContracts";
 import ContractCustomization from "./pages/ContractCustomization";
 import Settings from "./pages/Settings";
 import BuyCredits from "./pages/BuyCredits"; 
 import NotFound from "./pages/NotFound";
 import AdminCreditPacks from "./pages/admin/AdminCreditPacks";
+import AdminOverview from "./pages/admin/AdminOverview";
 
 
 const queryClient = new QueryClient();
@@ -49,11 +49,7 @@ function AppRoutes() {
           <MyGames />
         </ProtectedRoute>
       } />
-      <Route path="/my-contracts" element={
-        <ProtectedRoute>
-          <MyContracts />
-        </ProtectedRoute>
-      } />
+      <Route path="/my-contracts" element={<Navigate to="/my-games" replace />} />
       <Route path="/contracts/:id/customize" element={
         <ProtectedRoute>
           <ContractCustomization />
@@ -66,6 +62,15 @@ function AppRoutes() {
           <ProtectedRoute>
             <BuyCredits />
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/overview"
+        element={
+          <AdminRoute>
+            <AdminOverview />
+          </AdminRoute>
         }
       />
 

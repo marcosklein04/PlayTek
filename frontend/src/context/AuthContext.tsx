@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, } from "react";
 import { User, ContractedGame } from "@/types";
-import { fetchGames, fetchMySessions } from "@/api/games";
+import { fetchGames } from "@/api/games";
+import { fetchMyContracts } from "@/api/contracts";
 import { mapApiGameToGame } from "@/mappers/gameMapper";
 import { apiLogin, apiRegister } from "@/api/auth";
 
@@ -42,8 +43,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // 1) Traigo sesiones del usuario
-      const { resultados: sessions } = await fetchMySessions();
+      // 1) Traigo contratos del usuario
+      const { resultados: contracts } = await fetchMyContracts();
 
       // 2) Traigo catálogo completo para poder armar cards lindas
       const { resultados: catalog } = await fetchGames();
@@ -54,25 +55,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         catalogMap.set(g.slug, mapApiGameToGame(g));
       }
 
-      // 3) Quedarme con 1 sesión por juego (la más reciente)
+      // 3) Quedarme con 1 contrato por juego (el más reciente)
       const latestBySlug = new Map<string, any>();
-      for (const s of sessions) {
-        const prev = latestBySlug.get(s.juego.slug);
+      for (const c of contracts) {
+        const prev = latestBySlug.get(c.juego.slug);
         if (
           !prev ||
-          new Date(s.iniciado_en).getTime() > new Date(prev.iniciado_en).getTime()
+          new Date(c.creado_en || 0).getTime() > new Date(prev.creado_en || 0).getTime()
         ) {
-          latestBySlug.set(s.juego.slug, s);
+          latestBySlug.set(c.juego.slug, c);
         }
       }
 
       // 4) Construir ContractedGame[] para la UI
       const contracted: ContractedGame[] = Array.from(latestBySlug.values()).map(
-        (s: any) => {
+        (c: any) => {
           const base =
-            catalogMap.get(s.juego.slug) || {
-              id: s.juego.slug,
-              name: s.juego.nombre,
+            catalogMap.get(c.juego.slug) || {
+              id: c.juego.slug,
+              name: c.juego.nombre,
               shortDescription: "",
               description: "",
               image: "",
@@ -86,9 +87,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           return {
             ...base,
-            id: s.juego.slug,
-            status: s.estado,
-            contractedAt: new Date(s.iniciado_en),
+            id: c.juego.slug,
+            status: c.estado === "activo" ? "active" : "pending",
+            contractedAt: new Date(c.creado_en || Date.now()),
           };
         }
       );

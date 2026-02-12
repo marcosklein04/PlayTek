@@ -487,6 +487,29 @@ def _build_session_payload_for_contract(
     )
 
 
+def _pick_question_set_for_preview(user, juego):
+    company = get_company_for_user(user)
+    if not company:
+        return None
+
+    question_set = pick_question_set_for_session(user=user, juego=juego)
+    if (
+        question_set
+        and question_set.company_id == company.id
+        and Question.objects.filter(question_set=question_set, is_active=True).exists()
+    ):
+        return question_set
+
+    # Fallback seguro: solo set de la misma empresa con al menos una pregunta activa.
+    return (
+        QuestionSet.objects
+        .filter(company=company, is_active=True, questions__is_active=True)
+        .distinct()
+        .order_by("-created_at")
+        .first()
+    )
+
+
 @csrf_exempt
 @require_POST
 @token_required
@@ -500,8 +523,14 @@ def crear_contrato_juego(request):
         return err
 
     slug = (body.get("game_slug") or body.get("slug") or "").strip()
+    fecha_evento = _parse_date((body.get("fecha_evento") or "").strip())
     fecha_inicio = _parse_date((body.get("fecha_inicio") or "").strip())
     fecha_fin = _parse_date((body.get("fecha_fin") or "").strip())
+
+    # Nuevo formato recomendado: fecha exacta.
+    if fecha_evento:
+        fecha_inicio = fecha_evento
+        fecha_fin = fecha_evento
 
     if not slug:
         return JsonResponse({"error": "game_slug_requerido"}, status=400)
@@ -1112,12 +1141,20 @@ def _build_runner_url(request, juego: Game, sesion: GameSession, user_id: int) -
     parts = urlsplit(base)
     base_query = parts.query
 
-    extra = urlencode(
-        {"session_id": str(sesion.id), "user_id": str(user_id), "session_token": sesion.runner_token}
-    )
+    base_params = {"session_id": str(sesion.id), "user_id": str(user_id)}
+    fragment = parts.fragment
+
+    # Trivia: no expone el token en query string para evitar fugas por Referer.
+    if juego.slug == "trivia":
+        extra = urlencode(base_params)
+        token_fragment = urlencode({"session_token": sesion.runner_token})
+        fragment = f"{fragment}&{token_fragment}" if fragment else token_fragment
+    else:
+        extra = urlencode({**base_params, "session_token": sesion.runner_token})
+
     query = f"{base_query}&{extra}" if base_query else extra
 
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, fragment))
 
 
 def _serializar_juego(juego: Game):
@@ -1303,6 +1340,54 @@ def iniciar_juego(request, slug: str):
             "juego": {"slug": juego.slug, "nombre": juego.name, "runner_url": runner_final},
             "costo_cobrado": costo,
             "saldo_restante": billetera.balance,
+            "id_sesion": str(sesion.id),
+        },
+        status=201,
+    )
+
+
+@csrf_exempt
+@require_POST
+@token_required
+def preview_juego(request, slug: str):
+    """
+    Preview sin cobro para que el cliente pruebe antes de pagar.
+    En Trivia, se activa preview_mode para que el runner muestre watermark.
+    """
+    juego = get_object_or_404(Game, slug=slug, is_enabled=True)
+
+    question_set = None
+    client_state = {
+        "juego": juego.slug,
+        "iniciado": True,
+        "preview_mode": True,
+    }
+
+    if juego.slug == "trivia":
+        question_set = _pick_question_set_for_preview(request.user, juego)
+        if not question_set:
+            return JsonResponse({"error": "sesion_sin_question_set"}, status=409)
+
+        client_state["customization"] = _default_customization_for_game(juego.slug)
+
+    sesion = GameSession.objects.create(
+        user=request.user,
+        game=juego,
+        status=GameSession.Status.ACTIVE,
+        cost_charged=0,
+        client_state=client_state,
+        question_set=question_set,
+    )
+    sesion.runner_token = secrets.token_urlsafe(32)[:64]
+    sesion.save(update_fields=["runner_token"])
+
+    runner_final = _build_runner_url(request, juego, sesion, request.user.id)
+    return JsonResponse(
+        {
+            "ok": True,
+            "preview_mode": True,
+            "launch_mode": "preview",
+            "juego": {"slug": juego.slug, "nombre": juego.name, "runner_url": runner_final},
             "id_sesion": str(sesion.id),
         },
         status=201,

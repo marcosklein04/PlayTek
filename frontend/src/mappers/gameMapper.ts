@@ -1,15 +1,20 @@
-import { Game, GameCategory } from "@/types";
+import { Game } from "@/types";
 import { ApiGame } from "@/api/games";
 
-
-function parsePrice(raw?: string): number {
-  if (!p) return 0;
-  const m = p.replace(",", ".").match(/(\d+(\.\d+)?)/);
-  return m ? Number(m[1]) : 0;
+function parseNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value.replace(",", ".");
+    const match = normalized.match(/(\d+(\.\d+)?)/);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function mapCategory(tags?: string[]): Game["category"] {
-  const t = (tags || []).map(s => s.toLowerCase());
+  const t = (tags || []).map((s) => s.toLowerCase());
   if (t.includes("trivia") || t.includes("quiz")) return "trivia";
   if (t.includes("multiplayer")) return "multiplayer";
   if (t.includes("social")) return "social";
@@ -18,38 +23,38 @@ function mapCategory(tags?: string[]): Game["category"] {
   return "interactive";
 }
 
-
-function pickPricing(api: ApiGame): GamePricing {
-  const price = parsePrice(api.precio);
-
-  // Si el texto contiene "/partida" lo tratamos como one-time por juego/partida
-  const raw = (api.precio || "").toLowerCase();
-  const isPerPlay = raw.includes("partida");
-
-  return {
-    type: isPerPlay ? "one-time" : "per-event",
-    price,
-    currency: "USD",
-    period: isPerPlay ? undefined : "event",
-  };
+function buildMiniBio(description: string, shortDescription: string): string {
+  const base = shortDescription || description || "Sin descripción";
+  const clean = base.replace(/\s+/g, " ").trim();
+  if (clean.length <= 180) return clean;
+  return `${clean.slice(0, 177)}...`;
 }
 
-export function mapApiGameToGame(api: any): Game {
+export function mapApiGameToGame(api: ApiGame): Game {
+  const description = api.descripcion || "";
+  const shortDescription = (api.descripcion || "").slice(0, 120);
+
+  const creditsCost = parseNumber(api.costo_por_partida) ?? parseNumber(api.precio) ?? 0;
+
   return {
-    id: String(api.id ?? api.slug ?? api.codigo ?? crypto.randomUUID()),
-    name: api.nombre ?? api.name ?? "Juego",
-    shortDescription: api.descripcion_corta ?? api.short_description ?? "",
-    description: api.descripcion ?? api.description ?? "",
-    category: api.categoria ?? api.category ?? "all",
-    image: api.imagen ?? api.image ?? "/placeholder.png",
-    isPopular: Boolean(api.popular ?? api.is_popular ?? false),
-    isNew: Boolean(api.nuevo ?? api.is_new ?? false),
-    modality: Array.isArray(api.modalidad ?? api.modality) ? (api.modalidad ?? api.modality) : [],
-    features: Array.isArray(api.features) ? api.features : [],
+    id: String(api.slug || crypto.randomUUID()),
+    name: api.nombre || "Juego",
+    description,
+    shortDescription: shortDescription || description || "Sin descripción",
+    miniBio: buildMiniBio(description, shortDescription),
+    image: api.imagen_portada || "/placeholder.png",
+    category: mapCategory(api.tags),
+    modality: [],
     pricing: {
-      price: Number(api.precio ?? api.pricing?.price ?? 0),
-      period: api.periodo ?? api.pricing?.period,
-      type: api.tipo ?? api.pricing?.type ?? "subscription",
+      type: "per-event",
+      price: creditsCost,
+      currency: "CREDITS",
+      period: "event",
     },
+    creditsCost,
+    features: [],
+    isPopular: Boolean(api.destacado),
+    isNew: false,
   };
 }
+

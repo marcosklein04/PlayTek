@@ -6,6 +6,7 @@ urlpatterns = [
     path("catalogo/juegos", views.catalogo_juegos),
     path("juegos", views.catalogo_juegos, name="catalogo_juegos"),
     path("juegos/<slug:slug>/iniciar", views.iniciar_juego),
+    path("juegos/<slug:slug>/preview", views.preview_juego),
 
     path("juegos/sesiones", views.mis_sesiones),
     path("juegos/sesiones/<uuid:session_id>", views.obtener_sesion),
@@ -14,6 +15,7 @@ urlpatterns = [
     # English alias
     path("catalog/games", views.catalogo_juegos),
     path("games/<slug:slug>/start", views.iniciar_juego),
+    path("games/<slug:slug>/preview", views.preview_juego),
 
     path("games/sessions", views.mis_sesiones),
     path("games/sessions/<uuid:session_id>", views.obtener_sesion),

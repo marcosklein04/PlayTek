@@ -12,11 +12,13 @@ export interface Game {
   name: string;
   description: string;
   shortDescription: string;
+  miniBio?: string;
   image: string;
   video?: string;
   category: GameCategory;
   modality: GameModality[];
   pricing: GamePricing;
+  creditsCost?: number;
   features: string[];
   isPopular?: boolean;
   isNew?: boolean;

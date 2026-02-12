@@ -2,14 +2,13 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
+  Wallet,
   Gamepad2,
   FolderOpen,
-  SlidersHorizontal,
   Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Wallet, // ✅ agregado
 } from 'lucide-react';
 import { PlaytekLogo } from './PlaytekLogo';
 import { Button } from '@/components/ui/button';
@@ -19,19 +18,15 @@ import { useState } from 'react';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/buy-credits', label: 'Comprar créditos', icon: Wallet },
   { path: '/catalog', label: 'Catálogo', icon: Gamepad2 },
   { path: '/my-games', label: 'Mis Juegos', icon: FolderOpen },
-  { path: '/my-contracts', label: 'Mis Contratos', icon: SlidersHorizontal },
-
-  // ✅ NUEVO
-  { path: '/buy-credits', label: 'Comprar créditos', icon: Wallet },
-
   { path: '/settings', label: 'Configuración', icon: Settings },
 ];
 
 const adminItems = [
+  { path: "/admin/overview", label: "Admin · Overview", icon: LayoutDashboard },
   { path: "/admin/credit-packs", label: "Admin · Packs", icon: Wallet },
-  // después sumamos más: juegos, empresas, etc
 ];
 
 export function Sidebar() {
@@ -68,7 +63,7 @@ export function Sidebar() {
       <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => {
           const isContractsCustomization =
-            item.path === "/my-contracts" && location.pathname.startsWith("/contracts/");
+            item.path === "/my-games" && location.pathname.startsWith("/contracts/");
           const isActive = location.pathname === item.path || isContractsCustomization;
           const Icon = item.icon;
 

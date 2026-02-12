@@ -91,7 +91,7 @@ export default function ContractCustomization() {
   useEffect(() => {
     if (!validId) {
       toast({ title: "Contrato invalido", description: "No se pudo abrir la customizacion.", variant: "destructive" });
-      navigate("/my-contracts", { replace: true });
+      navigate("/my-games", { replace: true });
       return;
     }
 
@@ -921,7 +921,7 @@ export default function ContractCustomization() {
             </section>
 
             <div className="flex items-center justify-end gap-3">
-              <Button variant="secondary" onClick={() => navigate("/my-contracts")}>
+              <Button variant="secondary" onClick={() => navigate("/my-games")}>
                 Volver
               </Button>
               <Button variant="outline" disabled={disabled} onClick={handlePreview}>

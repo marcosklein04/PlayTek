@@ -3,6 +3,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Superadmin dashboard
+    path("admin/overview", views.admin_super_overview, name="admin_overview"),
+
     # Packs
     path("credit-packs", views.credit_packs, name="credit_packs"),
 

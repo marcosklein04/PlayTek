@@ -3,17 +3,22 @@ import uuid
 import requests
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import F
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import redirect
+from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from games_catalog.models import ContratoJuego
 
 from api_auth.auth import token_required
 from .mp import create_preference
 from .models import Wallet, LedgerEntry, CreditPack, WalletTopup
+
+User = get_user_model()
 
 def _require_admin(user):
     return bool(user and user.is_superuser)
@@ -116,6 +121,136 @@ def admin_credit_packs_update(request, pack_id: int):
 
     p.save()
     return JsonResponse({"ok": True})
+
+
+@require_GET
+@token_required
+def admin_super_overview(request):
+    """
+    Vista operativa para superadmin:
+    - clientes
+    - contratos (con fechas)
+    - transacciones de wallet (ledger)
+    """
+    if not _require_admin(request.user):
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    date_from = parse_date((request.GET.get("date_from") or "").strip())
+    date_to = parse_date((request.GET.get("date_to") or "").strip())
+
+    contracts_qs = (
+        ContratoJuego.objects
+        .select_related("usuario__profile__company", "juego")
+        .order_by("-creado_en")
+    )
+    ledger_qs = (
+        LedgerEntry.objects
+        .select_related("user__profile__company")
+        .order_by("-created_at")
+    )
+    topups_qs = (
+        WalletTopup.objects
+        .select_related("user__profile__company", "pack")
+        .order_by("-created_at")
+    )
+
+    if date_from:
+        contracts_qs = contracts_qs.filter(creado_en__date__gte=date_from)
+        ledger_qs = ledger_qs.filter(created_at__date__gte=date_from)
+        topups_qs = topups_qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        contracts_qs = contracts_qs.filter(creado_en__date__lte=date_to)
+        ledger_qs = ledger_qs.filter(created_at__date__lte=date_to)
+        topups_qs = topups_qs.filter(created_at__date__lte=date_to)
+
+    contracts = list(contracts_qs[:200])
+    ledger_entries = list(ledger_qs[:300])
+    topups = list(topups_qs[:200])
+
+    clients_qs = (
+        User.objects
+        .filter(is_superuser=False)
+        .select_related("profile__company")
+        .order_by("username")
+    )
+    clients = []
+    for user in clients_qs:
+        company = getattr(getattr(user, "profile", None), "company", None)
+        clients.append(
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "email": user.email or "",
+                "company": company.name if company else "",
+                "joined_at": user.date_joined.isoformat() if user.date_joined else None,
+            }
+        )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "summary": {
+                "clients": len(clients),
+                "contracts": contracts_qs.count(),
+                "ledger_entries": ledger_qs.count(),
+                "topups": topups_qs.count(),
+            },
+            "filters": {
+                "date_from": date_from.isoformat() if date_from else None,
+                "date_to": date_to.isoformat() if date_to else None,
+            },
+            "clients": clients,
+            "contracts": [
+                {
+                    "id": c.id,
+                    "client_username": c.usuario.username,
+                    "client_company": getattr(getattr(c.usuario, "profile", None), "company", None).name
+                    if getattr(getattr(c.usuario, "profile", None), "company", None)
+                    else "",
+                    "game_slug": c.juego.slug,
+                    "game_name": c.juego.name,
+                    "fecha_inicio": c.fecha_inicio.isoformat(),
+                    "fecha_fin": c.fecha_fin.isoformat(),
+                    "estado": c.estado,
+                    "creado_en": c.creado_en.isoformat() if c.creado_en else None,
+                }
+                for c in contracts
+            ],
+            "transactions": [
+                {
+                    "id": item.id,
+                    "source": "ledger",
+                    "kind": item.kind,
+                    "amount": item.amount,
+                    "reference_type": item.reference_type,
+                    "reference_id": item.reference_id,
+                    "username": item.user.username,
+                    "company": getattr(getattr(item.user, "profile", None), "company", None).name
+                    if getattr(getattr(item.user, "profile", None), "company", None)
+                    else "",
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                }
+                for item in ledger_entries
+            ],
+            "topups": [
+                {
+                    "id": t.id,
+                    "username": t.user.username,
+                    "company": getattr(getattr(t.user, "profile", None), "company", None).name
+                    if getattr(getattr(t.user, "profile", None), "company", None)
+                    else "",
+                    "status": t.status,
+                    "credits": t.credits,
+                    "amount_ars": str(t.amount_ars),
+                    "pack_name": t.pack.name if t.pack_id else "",
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                    "approved_at": t.approved_at.isoformat() if t.approved_at else None,
+                }
+                for t in topups
+            ],
+        },
+        status=200,
+    )
 
 
 @require_GET

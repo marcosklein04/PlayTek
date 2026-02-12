@@ -17,19 +17,14 @@ type Props = {
 export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
   const { toast } = useToast();
   const [step, setStep] = useState<"dates" | "confirm" | "loading" | "success">("dates");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [eventDate, setEventDate] = useState("");
   const [result, setResult] = useState<{ saldo_restante: number } | null>(null);
 
-  const canContinue = useMemo(() => {
-    if (!start || !end) return false;
-    return new Date(start) <= new Date(end);
-  }, [start, end]);
+  const canContinue = useMemo(() => !!eventDate, [eventDate]);
 
   const reset = () => {
     setStep("dates");
-    setStart("");
-    setEnd("");
+    setEventDate("");
     setResult(null);
   };
 
@@ -44,8 +39,9 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
       setStep("loading");
       const response = await createGameContract({
         slug: game.id,
-        fecha_inicio: start,
-        fecha_fin: end,
+        fecha_evento: eventDate,
+        fecha_inicio: eventDate,
+        fecha_fin: eventDate,
       });
       setResult({ saldo_restante: response.saldo_restante });
       setStep("success");
@@ -81,17 +77,13 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
         {step === "dates" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Elegí las fechas en las que se va a jugar en el evento.
+              Elegí la fecha exacta en la que se va a jugar en el evento.
             </p>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div className="space-y-2">
-                <label className="text-sm">Inicio</label>
-                <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Fin</label>
-                <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+                <label className="text-sm">Fecha del evento</label>
+                <Input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
               </div>
             </div>
 
@@ -108,9 +100,7 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
 
         {step === "confirm" && (
           <div className="space-y-4">
-            <p className="text-sm">
-              Vas a contratar <b>{game?.name}</b> desde <b>{start}</b> hasta <b>{end}</b>.
-            </p>
+            <p className="text-sm">Vas a contratar <b>{game?.name}</b> para el día <b>{eventDate}</b>.</p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setStep("dates")}>
                 Atrás

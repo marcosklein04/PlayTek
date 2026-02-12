@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
     <link rel="stylesheet" href="{% static 'trivia/style.css' %}">
     <title>Trivia</title>
 </head>
@@ -32,10 +33,13 @@
 
     <script>
         // solo inyectamos SESSION; lógica en archivo JS
+        const searchParams = new URLSearchParams(location.search);
+        const hashValue = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
+        const hashParams = new URLSearchParams(hashValue);
         window.SESSION = {
-        sessionId: new URLSearchParams(location.search).get("session_id"),
-        userId: new URLSearchParams(location.search).get("user_id"),
-        sessionToken: new URLSearchParams(location.search).get("session_token"),
+        sessionId: searchParams.get("session_id"),
+        userId: searchParams.get("user_id"),
+        sessionToken: hashParams.get("session_token") || searchParams.get("session_token"),
         };
     </script>
     <script src="{% static 'trivia/trivia.js' %}"></script>

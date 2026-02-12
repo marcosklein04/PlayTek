@@ -13,85 +13,152 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveField(
-            model_name='billetera',
-            name='usuario',
-        ),
-        migrations.RemoveField(
-            model_name='movimientobilletera',
-            name='usuario',
-        ),
-        migrations.DeleteModel(
-            name='LedgerEntry',
-        ),
-        migrations.DeleteModel(
-            name='Wallet',
-        ),
-        migrations.CreateModel(
-            name='LedgerEntry',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('kind', models.CharField(choices=[('TOPUP', 'Topup'), ('SPEND', 'Spend'), ('REFUND', 'Refund'), ('ADJUST', 'Adjust')], db_column='kind', max_length=16)),
-                ('amount', models.IntegerField(db_column='amount')),
-                ('reference_type', models.CharField(db_column='reference_type', max_length=64)),
-                ('reference_id', models.CharField(db_column='reference_id', max_length=128)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_column='created_at')),
-                ('user', models.ForeignKey(db_column='user_id', on_delete=django.db.models.deletion.CASCADE, related_name='ledger_entries', to=settings.AUTH_USER_MODEL)),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
+                migrations.DeleteModel(
+                    name='LedgerEntry',
+                ),
+                migrations.DeleteModel(
+                    name='Wallet',
+                ),
+                migrations.RenameModel(
+                    old_name='Billetera',
+                    new_name='Wallet',
+                ),
+                migrations.RenameModel(
+                    old_name='MovimientoBilletera',
+                    new_name='LedgerEntry',
+                ),
+                migrations.RenameField(
+                    model_name='wallet',
+                    old_name='usuario',
+                    new_name='user',
+                ),
+                migrations.RenameField(
+                    model_name='wallet',
+                    old_name='saldo',
+                    new_name='balance',
+                ),
+                migrations.RenameField(
+                    model_name='wallet',
+                    old_name='actualizado_en',
+                    new_name='updated_at',
+                ),
+                migrations.AlterModelOptions(
+                    name='wallet',
+                    options={
+                        'verbose_name': 'Wallet',
+                        'verbose_name_plural': 'Wallets',
+                        'db_table': 'wallet_wallet',
+                    },
+                ),
+                migrations.AlterField(
+                    model_name='wallet',
+                    name='user',
+                    field=models.OneToOneField(
+                        db_column='user_id',
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name='wallet',
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                migrations.AlterField(
+                    model_name='wallet',
+                    name='balance',
+                    field=models.PositiveIntegerField(db_column='balance', default=0),
+                ),
+                migrations.AlterField(
+                    model_name='wallet',
+                    name='updated_at',
+                    field=models.DateTimeField(auto_now=True, db_column='updated_at'),
+                ),
+                migrations.RenameField(
+                    model_name='ledgerentry',
+                    old_name='usuario',
+                    new_name='user',
+                ),
+                migrations.RenameField(
+                    model_name='ledgerentry',
+                    old_name='tipo',
+                    new_name='kind',
+                ),
+                migrations.RenameField(
+                    model_name='ledgerentry',
+                    old_name='monto',
+                    new_name='amount',
+                ),
+                migrations.RenameField(
+                    model_name='ledgerentry',
+                    old_name='tipo_referencia',
+                    new_name='reference_type',
+                ),
+                migrations.RenameField(
+                    model_name='ledgerentry',
+                    old_name='id_referencia',
+                    new_name='reference_id',
+                ),
+                migrations.RenameField(
+                    model_name='ledgerentry',
+                    old_name='creado_en',
+                    new_name='created_at',
+                ),
+                migrations.AlterModelOptions(
+                    name='ledgerentry',
+                    options={
+                        'verbose_name': 'Ledger Entry',
+                        'verbose_name_plural': 'Ledger Entries',
+                        'db_table': 'wallet_ledgerentry',
+                    },
+                ),
+                migrations.AlterField(
+                    model_name='ledgerentry',
+                    name='kind',
+                    field=models.CharField(
+                        choices=[
+                            ('TOPUP', 'Topup'),
+                            ('SPEND', 'Spend'),
+                            ('REFUND', 'Refund'),
+                            ('ADJUST', 'Adjust'),
+                        ],
+                        db_column='kind',
+                        max_length=16,
+                    ),
+                ),
+                migrations.AlterField(
+                    model_name='ledgerentry',
+                    name='user',
+                    field=models.ForeignKey(
+                        db_column='user_id',
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name='ledger_entries',
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                migrations.CreateModel(
+                    name='Billetera',
+                    fields=[],
+                    options={
+                        'verbose_name': 'Billetera',
+                        'verbose_name_plural': 'Billeteras',
+                        'proxy': True,
+                        'indexes': [],
+                        'constraints': [],
+                    },
+                    bases=('wallet.wallet',),
+                ),
+                migrations.CreateModel(
+                    name='MovimientoBilletera',
+                    fields=[],
+                    options={
+                        'verbose_name': 'Movimiento de billetera',
+                        'verbose_name_plural': 'Movimientos de billetera',
+                        'proxy': True,
+                        'indexes': [],
+                        'constraints': [],
+                    },
+                    bases=('wallet.ledgerentry',),
+                ),
             ],
-            options={
-                'verbose_name': 'Ledger Entry',
-                'verbose_name_plural': 'Ledger Entries',
-                'db_table': 'wallet_ledgerentry',
-            },
-        ),
-        migrations.CreateModel(
-            name='Wallet',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('balance', models.PositiveIntegerField(db_column='balance', default=0)),
-                ('updated_at', models.DateTimeField(auto_now=True, db_column='updated_at')),
-                ('user', models.OneToOneField(db_column='user_id', on_delete=django.db.models.deletion.CASCADE, related_name='wallet', to=settings.AUTH_USER_MODEL)),
-            ],
-            options={
-                'verbose_name': 'Wallet',
-                'verbose_name_plural': 'Wallets',
-                'db_table': 'wallet_wallet',
-            },
-        ),
-        migrations.DeleteModel(
-            name='Billetera',
-        ),
-        migrations.DeleteModel(
-            name='MovimientoBilletera',
-        ),
-        migrations.CreateModel(
-            name='Billetera',
-            fields=[
-            ],
-            options={
-                'verbose_name': 'Billetera',
-                'verbose_name_plural': 'Billeteras',
-                'proxy': True,
-                'indexes': [],
-                'constraints': [],
-            },
-            bases=('wallet.wallet',),
-        ),
-        migrations.CreateModel(
-            name='MovimientoBilletera',
-            fields=[
-            ],
-            options={
-                'verbose_name': 'Movimiento de billetera',
-                'verbose_name_plural': 'Movimientos de billetera',
-                'proxy': True,
-                'indexes': [],
-                'constraints': [],
-            },
-            bases=('wallet.ledgerentry',),
-        ),
-        migrations.AddIndex(
-            model_name='ledgerentry',
-            index=models.Index(fields=['user', 'created_at'], name='wallet_ledg_user_id_64c783_idx'),
         ),
     ]

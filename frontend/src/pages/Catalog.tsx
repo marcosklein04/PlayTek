@@ -8,7 +8,7 @@ import { GameCard } from "@/components/GameCard";
 import { GameDetailModal } from "@/components/GameDetailModal";
 import { useAuth } from "@/context/AuthContext";
 import { categories } from "@/data/games";
-import { fetchGames } from "@/api/games";
+import { fetchGames, previewGame } from "@/api/games";
 import { Game } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { mapApiGameToGame } from "@/mappers/gameMapper";
@@ -21,7 +21,7 @@ export default function Catalog() {
   const [contractGame, setContractGame] = useState<Game | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  const { contractedGames } = useAuth();
+  const { contractedGames, refreshContractedGames } = useAuth();
   const { toast } = useToast();
 
   const [games, setGames] = useState<Game[]>([]);
@@ -58,6 +58,20 @@ export default function Catalog() {
     const g = games.find((x) => x.id === gameId) || null;
     setContractGame(g);
     setSelectedGame(null);
+  };
+
+  const handlePreviewGame = async (gameId: string) => {
+    try {
+      const res = await previewGame(gameId);
+      toast({
+        title: "Modo prueba",
+        description: "Abrimos el juego en preview con marca de agua.",
+      });
+      window.location.href = res.juego.runner_url;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo abrir el preview";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    }
   };
 
   return (
@@ -153,6 +167,7 @@ export default function Catalog() {
           isOpen={!!selectedGame}
           onClose={() => setSelectedGame(null)}
           onContract={(gameId) => handleOpenContract(gameId)}
+          onPreview={handlePreviewGame}
           isContracted={
             selectedGame ? contractedGames.some((cg) => cg.id === selectedGame.id) : false
           }
@@ -164,6 +179,7 @@ export default function Catalog() {
           onClose={() => setContractGame(null)}
           onPurchased={() => {
             toast({ title: "Contrato creado", description: "Ya podes personalizar este juego." });
+            void refreshContractedGames();
           }}
         />
       </main>

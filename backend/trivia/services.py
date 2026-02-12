@@ -3,7 +3,7 @@ from django.utils import timezone
 
 from accounts.models import Company
 from accounts.models import UserProfile
-from .models import QuestionSet, TriviaReservation
+from .models import Question, QuestionSet, TriviaReservation
 from django.db import models
 
 
@@ -38,13 +38,18 @@ def pick_question_set_for_session(user, juego=None, when=None):
         .order_by("-starts_at")
         .first()
     )
-    if reserva and reserva.question_set:
+    if (
+        reserva
+        and reserva.question_set
+        and Question.objects.filter(question_set=reserva.question_set, is_active=True).exists()
+    ):
         return reserva.question_set
 
-    # Fallback: set activo más reciente
+    # Fallback: set activo más reciente con preguntas activas.
     qs = (
         QuestionSet.objects
-        .filter(company=company, is_active=True)
+        .filter(company=company, is_active=True, questions__is_active=True)
+        .distinct()
         .order_by("-created_at")
         .first()
     )

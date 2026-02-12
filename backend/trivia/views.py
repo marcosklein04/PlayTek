@@ -1,4 +1,5 @@
 import json
+import random
 
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
@@ -63,7 +64,7 @@ def runner_trivia_state(request):
     current = trivia.get("current")
     if isinstance(current, dict):
         trivia = dict(trivia)
-        trivia["current"] = {k: v for k, v in current.items() if k != "correct"}
+        trivia["current"] = {k: v for k, v in current.items() if not str(k).startswith("_")}
 
     return JsonResponse(
         {"trivia": trivia, "customization": customization, "preview_mode": preview_mode},
@@ -89,7 +90,12 @@ def runner_trivia_next(request):
         public = {k: v for k, v in current.items() if not k.startswith("_")}
         return JsonResponse({"question": public}, status=200)
 
-    asked_ids = trivia.get("asked_ids", [])
+    raw_asked_ids = trivia.get("asked_ids", [])
+    asked_ids = []
+    if isinstance(raw_asked_ids, list):
+        for asked in raw_asked_ids:
+            if str(asked).isdigit():
+                asked_ids.append(int(asked))
 
     customization, _ = _session_customization(sesion)
     rules = customization.get("rules") if isinstance(customization, dict) else {}
@@ -113,20 +119,41 @@ def runner_trivia_next(request):
         sesion.save(update_fields=["status", "ended_at", "result"])
         return JsonResponse({"finished": True, "result": result}, status=200)
 
-    q = (
+    candidates = list(
         Question.objects
-        .filter(question_set_id=sesion.question_set_id)
+        .filter(question_set_id=sesion.question_set_id, is_active=True)
         .exclude(id__in=asked_ids)
-        .order_by("?")
-        .first()
+        .prefetch_related("choices")
     )
+    random.shuffle(candidates)
+    q = None
+    choices = None
+    correct_choice = None
+
+    for candidate in candidates:
+        candidate_choices = list(candidate.choices.all())
+        if not candidate_choices:
+            continue
+        candidate_correct = next((c for c in candidate_choices if c.is_correct), None)
+        if not candidate_correct:
+            continue
+        q = candidate
+        choices = candidate_choices
+        correct_choice = candidate_correct
+        break
 
     if not q:
+        if candidates:
+            return JsonResponse(
+                {"error": "question_set_sin_preguntas_validas"},
+                status=409,
+            )
+
         result = {
-        "score": trivia.get("score", 0),
-        "answered": trivia.get("answered", 0),
-        "correct": trivia.get("correct", 0),
-    }
+            "score": trivia.get("score", 0),
+            "answered": trivia.get("answered", 0),
+            "correct": trivia.get("correct", 0),
+        }
 
         sesion.status = GameSession.Status.FINISHED
         sesion.ended_at = timezone.now()
@@ -139,20 +166,6 @@ def runner_trivia_next(request):
                 "result": result,
             },
             status=200
-        )
-
-    choices = list(q.choices.all())
-    if not choices:
-        return JsonResponse(
-            {"error": "pregunta_sin_opciones", "question_id": q.id},
-            status=409
-        )
-
-    correct_choice = next((c for c in choices if c.is_correct), None)
-    if not correct_choice:
-        return JsonResponse(
-            {"error": "pregunta_sin_correcta", "question_id": q.id},
-            status=409
         )
 
     trivia["current"] = {
@@ -195,8 +208,12 @@ def runner_trivia_answer(request):
         return err
 
     choice_id = body.get("choice_id")
-    if not choice_id:
+    if choice_id is None:
         return JsonResponse({"error": "choice_id_requerido"}, status=400)
+    try:
+        choice_id_int = int(choice_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "choice_id_invalido"}, status=400)
 
     state = sesion.client_state or {}
     trivia = state.get("trivia") or {}
@@ -209,7 +226,15 @@ def runner_trivia_answer(request):
     if not correct_choice_id:
         return JsonResponse({"error": "estado_invalido"}, status=500)
 
-    is_correct = int(choice_id) == int(correct_choice_id)
+    valid_choice_ids = {
+        int(choice.get("id"))
+        for choice in (current.get("choices") or [])
+        if isinstance(choice, dict) and str(choice.get("id")).isdigit()
+    }
+    if valid_choice_ids and choice_id_int not in valid_choice_ids:
+        return JsonResponse({"error": "choice_id_invalido"}, status=400)
+
+    is_correct = choice_id_int == int(correct_choice_id)
 
     trivia["answered"] = int(trivia.get("answered", 0)) + 1
     trivia.setdefault("score", 0)
@@ -232,7 +257,7 @@ def runner_trivia_answer(request):
 
     trivia["last_answer"] = {
         "question_id": current.get("id"),
-        "choice_id": int(choice_id),
+        "choice_id": choice_id_int,
         "correct": is_correct,
     }
 

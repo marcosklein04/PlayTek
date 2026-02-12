@@ -38,6 +38,18 @@ export async function startGame(slug: string) {
   });
 }
 
+export async function previewGame(slug: string) {
+  return apiFetch<{
+    ok: boolean;
+    preview_mode: boolean;
+    launch_mode: "preview";
+    juego: { slug: string; nombre: string; runner_url: string };
+    id_sesion: string;
+  }>(`/api/juegos/${slug}/preview`, {
+    method: "POST",
+  });
+}
+
 export async function fetchMySessions() {
   return apiFetch<{ resultados: ApiSession[] }>("/api/juegos/sesiones");
 }

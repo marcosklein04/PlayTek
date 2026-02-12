@@ -2,8 +2,9 @@ import { apiFetch } from "@/api/client";
 
 type CreateContractPayload = {
   slug: string;
-  fecha_inicio: string;
-  fecha_fin: string;
+  fecha_inicio?: string;
+  fecha_fin?: string;
+  fecha_evento?: string;
 };
 
 export type ContractGame = {

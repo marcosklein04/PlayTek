@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Play, Star, Zap, Users } from 'lucide-react';
+import { Play, Star, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Game } from '@/types';
@@ -14,6 +14,9 @@ interface GameCardProps {
 
 export function GameCard({ game, onContract, onViewDetails, isContracted, index = 0 }: GameCardProps) {
   const formatPrice = (pricing: Game['pricing']) => {
+    if (typeof game.creditsCost === "number" && Number.isFinite(game.creditsCost) && game.creditsCost > 0) {
+      return `${game.creditsCost} créditos`;
+    }
     const periodMap = {
       month: '/mes',
       year: '/año',
@@ -115,7 +118,7 @@ export function GameCard({ game, onContract, onViewDetails, isContracted, index 
             onClick={() => onContract && onContract(game.id)}
             disabled={!onContract}
           >
-            Jugar
+            Contratar
           </Button>
         </div>
       </div>
