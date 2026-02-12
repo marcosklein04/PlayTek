@@ -4,7 +4,7 @@ import json
 import os
 import secrets
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import urlencode, urlsplit, urlunsplit, urljoin
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -426,6 +426,22 @@ def _contract_is_available_on_date(contrato: ContratoJuego, target_date: date) -
     return contrato.fecha_inicio <= target_date <= contrato.fecha_fin
 
 
+def _iter_date_range(start_date: date, end_date: date):
+    current = start_date
+    while current <= end_date:
+        yield current
+        current += timedelta(days=1)
+
+
+def _find_contract_conflict_dates(contratos, requested_dates: list[date]) -> list[date]:
+    requested_unique = sorted(set(requested_dates))
+    conflict_dates = []
+    for target_date in requested_unique:
+        if any(_contract_is_available_on_date(contrato, target_date) for contrato in contratos):
+            conflict_dates.append(target_date)
+    return conflict_dates
+
+
 def _finalize_expired_contracts_for_user(user, today: date):
     # Si el último día contratado ya pasó, ese contrato deja de estar operativo.
     ContratoJuego.objects.filter(
@@ -596,20 +612,36 @@ def crear_contrato_juego(request):
     if is_explicit_dates_mode:
         fechas_pasadas = [f.isoformat() for f in fechas_evento if f < hoy]
         if fechas_pasadas:
-            return JsonResponse({"error": "fecha_pasada_no_permitida", "fechas": fechas_pasadas}, status=400)
+            return JsonResponse(
+                {
+                    "error": "fecha_pasada_no_permitida",
+                    "mensaje": "No se puede contratar con fechas pasadas.",
+                    "fechas": fechas_pasadas,
+                },
+                status=400,
+            )
 
         fecha_inicio = fechas_evento[0]
         fecha_fin = fechas_evento[-1]
         unidades_cobradas = len(fechas_evento)
+        requested_dates = fechas_evento
     else:
         if not fecha_inicio or not fecha_fin:
             return JsonResponse({"error": "fechas_invalidas"}, status=400)
         if fecha_inicio > fecha_fin:
             return JsonResponse({"error": "rango_fechas_invalido"}, status=400)
         if fecha_inicio < hoy:
-            return JsonResponse({"error": "fecha_pasada_no_permitida", "fecha_inicio": fecha_inicio.isoformat()}, status=400)
+            return JsonResponse(
+                {
+                    "error": "fecha_pasada_no_permitida",
+                    "mensaje": "La fecha de inicio no puede estar en el pasado.",
+                    "fecha_inicio": fecha_inicio.isoformat(),
+                },
+                status=400,
+            )
 
         unidades_cobradas = (fecha_fin - fecha_inicio).days + 1
+        requested_dates = list(_iter_date_range(fecha_inicio, fecha_fin))
 
     # Por ahora usamos cost_per_play como "costo por día"
     # (si después agregamos cost_per_day, cambiamos acá y listo)
@@ -627,17 +659,17 @@ def crear_contrato_juego(request):
         fecha_fin__gte=fecha_inicio,
     ).prefetch_related("fechas_evento")
 
-    if is_explicit_dates_mode:
-        solapa = any(
-            _contract_is_available_on_date(contrato_existente, fecha)
-            for contrato_existente in contratos_solapados_qs
-            for fecha in fechas_evento
+    contratos_solapados = list(contratos_solapados_qs)
+    fechas_conflictivas = _find_contract_conflict_dates(contratos_solapados, requested_dates)
+    if fechas_conflictivas:
+        return JsonResponse(
+            {
+                "error": "ya_existe_contrato_en_esas_fechas",
+                "mensaje": "Ya existe una contratación para al menos una de las fechas solicitadas.",
+                "fechas_conflictivas": [f.isoformat() for f in fechas_conflictivas],
+            },
+            status=409,
         )
-    else:
-        solapa = contratos_solapados_qs.exists()
-
-    if solapa:
-        return JsonResponse({"error": "ya_existe_contrato_en_esas_fechas"}, status=409)
 
     with transaction.atomic():
         wallet, _ = Wallet.objects.select_for_update().get_or_create(
@@ -647,7 +679,12 @@ def crear_contrato_juego(request):
 
         if wallet.balance < costo_total:
             return JsonResponse(
-                {"error": "saldo_insuficiente", "saldo": wallet.balance, "costo": costo_total},
+                {
+                    "error": "saldo_insuficiente",
+                    "mensaje": "No tenés créditos suficientes para esta contratación.",
+                    "saldo": wallet.balance,
+                    "costo": costo_total,
+                },
                 status=402,
             )
 

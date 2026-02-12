@@ -17,7 +17,7 @@ type Props = {
 
 export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
   const { toast } = useToast();
-  const { refreshWalletBalance } = useAuth();
+  const { refreshWalletBalance, walletBalance } = useAuth();
   const [step, setStep] = useState<"dates" | "confirm" | "loading" | "success">("dates");
   const [eventDates, setEventDates] = useState<string[]>([""]);
   const [result, setResult] = useState<{ saldo_restante: number } | null>(null);
@@ -41,6 +41,38 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
   const hasDuplicates = normalizedDates.length !== uniqueDates.length;
   const hasPastDates = uniqueDates.some((value) => value < todayIso);
   const canContinue = uniqueDates.length > 0 && !hasPastDates;
+  const costPerDate = useMemo(() => {
+    const parsed = Number(game?.creditsCost ?? game?.pricing?.price ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }, [game]);
+  const estimatedTotalCost = useMemo(
+    () => uniqueDates.length * costPerDate,
+    [uniqueDates, costPerDate],
+  );
+  const estimatedRemainingBalance = useMemo(() => {
+    if (walletBalance === null) return null;
+    return walletBalance - estimatedTotalCost;
+  }, [walletBalance, estimatedTotalCost]);
+  const hasKnownInsufficientBalance =
+    estimatedRemainingBalance !== null && estimatedRemainingBalance < 0;
+
+  const formatCredits = (value: number) => `${value.toLocaleString("es-AR")} créditos`;
+
+  const getContractErrorMessage = (message: string) => {
+    if (message.includes("ya_existe_contrato_en_esas_fechas")) {
+      return "Ya tenés este juego contratado en alguna de las fechas seleccionadas.";
+    }
+    if (message.includes("fecha_pasada_no_permitida")) {
+      return "No podés contratar fechas pasadas.";
+    }
+    if (message.includes("fechas_invalidas") || message.includes("rango_fechas_invalido")) {
+      return "Las fechas de contratación no son válidas.";
+    }
+    if (message.includes("juego_no_encontrado_o_inhabilitado")) {
+      return "El juego seleccionado no está disponible en este momento.";
+    }
+    return message;
+  };
 
   const reset = () => {
     setStep("dates");
@@ -80,7 +112,7 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
       setStep("confirm");
       toast({
         title: "No se pudo contratar",
-        description: message,
+        description: getContractErrorMessage(message),
         variant: "destructive",
       });
     }
@@ -179,14 +211,32 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
             <p className="text-sm">
               Vas a contratar <b>{game?.name}</b> para {uniqueDates.length} fecha{uniqueDates.length === 1 ? "" : "s"}:
             </p>
-            <div className="rounded-md border p-3 text-sm">
-              {uniqueDates.join(" · ")}
+            <div className="rounded-md border p-3 text-sm space-y-1">
+              <p><b>Fechas:</b> {uniqueDates.join(" · ")}</p>
+              <p><b>Costo por fecha:</b> {formatCredits(costPerDate)}</p>
+              <p><b>Costo total:</b> {formatCredits(estimatedTotalCost)}</p>
+              {walletBalance !== null && (
+                <>
+                  <p><b>Saldo actual:</b> {formatCredits(walletBalance)}</p>
+                  <p><b>Saldo estimado:</b> {formatCredits(estimatedRemainingBalance || 0)}</p>
+                </>
+              )}
             </div>
+            {hasKnownInsufficientBalance && (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
+                No alcanzan los créditos para esta contratación.
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setStep("dates")}>
                 Atrás
               </Button>
-              <Button variant="glow" onClick={submitPurchase}>
+              {hasKnownInsufficientBalance ? (
+                <Button variant="outline" onClick={() => (window.location.href = "/buy-credits")}>
+                  Comprar créditos
+                </Button>
+              ) : null}
+              <Button variant="glow" onClick={submitPurchase} disabled={hasKnownInsufficientBalance}>
                 Confirmar contratación
               </Button>
             </div>
@@ -201,9 +251,9 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
 
         {step === "success" && (
           <div className="space-y-4">
-            <div className="text-sm">Contratacion realizada correctamente.</div>
+            <div className="text-sm">Contratación realizada correctamente.</div>
             <div className="rounded-lg border p-3 text-sm">
-              Saldo restante: <b>{result?.saldo_restante ?? 0}</b> creditos.
+              Saldo restante: <b>{result?.saldo_restante ?? 0}</b> créditos.
             </div>
 
             <div className="flex justify-end gap-2">

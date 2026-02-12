@@ -194,3 +194,53 @@ class GamesCatalogContractDatesTests(TestCase):
 
         wallet_after = Wallet.objects.get(user=self.user).balance
         self.assertEqual(wallet_after, wallet_before)
+
+    def test_contract_range_allows_sparse_dates_without_conflict(self):
+        today = timezone.localdate()
+        in_two_days = today + timedelta(days=2)
+        tomorrow = today + timedelta(days=1)
+
+        create_sparse = self._post_json(
+            "/api/contracts",
+            {
+                "slug": self.game.slug,
+                "fechas_evento": [today.isoformat(), in_two_days.isoformat()],
+            },
+        )
+        self.assertEqual(create_sparse.status_code, 201)
+
+        create_range = self._post_json(
+            "/api/contracts",
+            {
+                "slug": self.game.slug,
+                "fecha_inicio": tomorrow.isoformat(),
+                "fecha_fin": tomorrow.isoformat(),
+            },
+        )
+        self.assertEqual(create_range.status_code, 201)
+
+    def test_contract_rejects_only_duplicated_dates_with_conflict_detail(self):
+        today = timezone.localdate()
+        tomorrow = today + timedelta(days=1)
+
+        create_base = self._post_json(
+            "/api/contracts",
+            {
+                "slug": self.game.slug,
+                "fechas_evento": [today.isoformat()],
+            },
+        )
+        self.assertEqual(create_base.status_code, 201)
+
+        create_conflict = self._post_json(
+            "/api/contracts",
+            {
+                "slug": self.game.slug,
+                "fecha_inicio": today.isoformat(),
+                "fecha_fin": tomorrow.isoformat(),
+            },
+        )
+        self.assertEqual(create_conflict.status_code, 409)
+        body = create_conflict.json()
+        self.assertEqual(body.get("error"), "ya_existe_contrato_en_esas_fechas")
+        self.assertIn(today.isoformat(), body.get("fechas_conflictivas", []))
