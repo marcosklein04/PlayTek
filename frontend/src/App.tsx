@@ -9,6 +9,8 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Catalog from "./pages/Catalog";
 import MyGames from "./pages/MyGames";
+import MyContracts from "./pages/MyContracts";
+import ContractCustomization from "./pages/ContractCustomization";
 import Settings from "./pages/Settings";
 import BuyCredits from "./pages/BuyCredits"; 
 import NotFound from "./pages/NotFound";
@@ -45,6 +47,16 @@ function AppRoutes() {
       <Route path="/my-games" element={
         <ProtectedRoute>
           <MyGames />
+        </ProtectedRoute>
+      } />
+      <Route path="/my-contracts" element={
+        <ProtectedRoute>
+          <MyContracts />
+        </ProtectedRoute>
+      } />
+      <Route path="/contracts/:id/customize" element={
+        <ProtectedRoute>
+          <ContractCustomization />
         </ProtectedRoute>
       } />
       {/* ✅ NUEVO: Comprar créditos */}

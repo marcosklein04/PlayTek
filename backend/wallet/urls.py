@@ -22,4 +22,6 @@ urlpatterns = [
 
     # Manual/dev topup 
     path("me/wallet/topup", views.recargar_billetera, name="wallet_topup_manual"),
+
+    # Contratos (API)
 ]

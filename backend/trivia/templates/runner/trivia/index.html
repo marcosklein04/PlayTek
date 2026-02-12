@@ -8,19 +8,27 @@
     <title>Trivia</title>
 </head>
 <body>
+    <div id="watermark" class="watermark hidden"></div>
 
-    <h1>Trivia Runner</h1>
+    <main class="runner-card">
+        <header id="hero" class="hero">
+            <img id="logo" class="logo hidden" alt="Logo del evento" />
+            <h1 id="title">Trivia Runner</h1>
+            <p id="subtitle"></p>
+        </header>
 
-    <div id="status"></div>
+        <div id="status"></div>
+        <p id="timer" class="timer hidden"></p>
 
-    <div id="questionBox" class="card">
-        <div id="questionText"></div>
-        <div id="choices"></div>
-    </div>
+        <div id="questionBox" class="card question-card">
+            <div id="questionText"></div>
+            <div id="choices"></div>
+        </div>
 
-    <div class="actions">
-        <button id="btnNext">Siguiente</button>
-    </div>
+        <div class="actions">
+            <button id="btnNext">Siguiente</button>
+        </div>
+    </main>
 
     <script>
         // solo inyectamos SESSION; lógica en archivo JS

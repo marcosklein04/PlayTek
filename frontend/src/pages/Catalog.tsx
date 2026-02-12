@@ -8,7 +8,7 @@ import { GameCard } from "@/components/GameCard";
 import { GameDetailModal } from "@/components/GameDetailModal";
 import { useAuth } from "@/context/AuthContext";
 import { categories } from "@/data/games";
-import { fetchGames, startGame } from "@/api/games";
+import { fetchGames } from "@/api/games";
 import { Game } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { mapApiGameToGame } from "@/mappers/gameMapper";
@@ -18,9 +18,8 @@ export default function Catalog() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
-  const [purchaseGame, setPurchaseGame] = useState<Game | null>(null);
+  const [contractGame, setContractGame] = useState<Game | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [balance, setBalance] = useState<number>(0);
 
   const { contractedGames } = useAuth();
   const { toast } = useToast();
@@ -55,41 +54,10 @@ export default function Catalog() {
     });
   }, [games, search, selectedCategory]);
 
-  const handleStart = async (gameId: string) => {
-    try {
-    const res = await startGame(gameId);
-    toast({
-      title: "¡Juego iniciado!",
-      description: `Sesión ${res.id_sesion} - saldo: ${res.saldo_restante}`,
-    });
-    window.location.href = res.juego.runner_url;
-  } catch (e: any) {
-      // si no hay saldo, abrimos el flujo de compra
-      const msg = String(e?.message || "");
-      const is402 =
-        e?.status === 402 ||
-        e?.response?.status === 402 ||
-        msg.includes("402") ||
-        msg.toLowerCase().includes("saldo_insuficiente");
-
-      if (is402) {
-        handleOpenPurchase(gameId);   //abre el modal (usa tu state purchaseGame)
-        setSelectedGame(null);
-        return;
-      }
-
-      toast({
-        title: "No se pudo iniciar el juego",
-        description: e.message || "Error",
-      });
-    } finally {
-      setSelectedGame(null);
-    }
-};
-
-  const handleOpenPurchase = (gameId: string) => {
+  const handleOpenContract = (gameId: string) => {
     const g = games.find((x) => x.id === gameId) || null;
-    setPurchaseGame(g);
+    setContractGame(g);
+    setSelectedGame(null);
   };
 
   return (
@@ -174,7 +142,7 @@ export default function Catalog() {
                 index={idx}
                 onViewDetails={setSelectedGame}
                 isContracted={isContracted}
-                onContract={handleStart}
+                onContract={handleOpenContract}
               />
             );
           })}
@@ -184,18 +152,18 @@ export default function Catalog() {
           game={selectedGame}
           isOpen={!!selectedGame}
           onClose={() => setSelectedGame(null)}
-          onContract={(gameId) => handleStart(gameId)}
+          onContract={(gameId) => handleOpenContract(gameId)}
           isContracted={
             selectedGame ? contractedGames.some((cg) => cg.id === selectedGame.id) : false
           }
         />
 
         <PurchaseFlowModal
-          game={purchaseGame}
-          open={!!purchaseGame}
-          onClose={() => setPurchaseGame(null)}
+          game={contractGame}
+          open={!!contractGame}
+          onClose={() => setContractGame(null)}
           onPurchased={() => {
-            toast({ title: "Compra simulada", description: "Luego conectamos MercadoPago/créditos" });
+            toast({ title: "Contrato creado", description: "Ya podes personalizar este juego." });
           }}
         />
       </main>

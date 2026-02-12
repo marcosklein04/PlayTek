@@ -4,6 +4,7 @@ from django.db import models
 
 
 
+
 # ============================================================
 # MODELOS REALES (INGLÉS) → son los que “mandan” en DB y migraciones
 # ============================================================
@@ -104,6 +105,73 @@ class GameSession(models.Model):
     def __str__(self) -> str:
         username = getattr(self.user, "username", str(self.user))
         return f"{username} - {self.game.slug} - {self.status}"
+    
+# ============================================================
+# CONTRATO DE JUEGO (empresa contrata juego para fechas)
+# ============================================================
+
+class ContratoJuego(models.Model):
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        ACTIVO = "activo", "Activo"
+        CANCELADO = "cancelado", "Cancelado"
+        FINALIZADO = "finalizado", "Finalizado"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="contratos_juego",
+    )
+
+    juego = models.ForeignKey(
+        Game,
+        on_delete=models.CASCADE,
+        related_name="contratos",
+    )
+
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.ACTIVO,
+    )
+
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "games_catalog_contratojuego"
+        ordering = ["-creado_en"]
+        indexes = [
+            models.Index(fields=["usuario", "juego", "estado"]),
+            models.Index(fields=["fecha_inicio", "fecha_fin"]),
+        ]
+
+    def __str__(self):
+        return f"{self.usuario.username} - {self.juego.slug} ({self.fecha_inicio} → {self.fecha_fin})"
+
+
+class GameCustomization(models.Model):
+    contrato = models.OneToOneField(
+        ContratoJuego,
+        on_delete=models.CASCADE,
+        related_name="customization",
+    )
+    config = models.JSONField(default=dict, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "games_catalog_gamecustomization"
+        ordering = ["-actualizado_en"]
+
+    def __str__(self):
+        return f"Customization contrato={self.contrato_id}"
+
+
 
 # ============================================================
 # PROXIES (ESPAÑOL) → NO crean tablas, NO generan migraciones

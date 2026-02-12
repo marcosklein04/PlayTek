@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Game } from "@/types";
+import { createGameContract } from "@/api/contracts";
 
 type Props = {
   game: Game | null;
@@ -18,7 +19,7 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
   const [step, setStep] = useState<"dates" | "confirm" | "loading" | "success">("dates");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{ saldo_restante: number } | null>(null);
 
   const canContinue = useMemo(() => {
     if (!start || !end) return false;
@@ -39,16 +40,35 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
 
   const submitPurchase = async () => {
     if (!game) return;
-
-    // ✅ Por ahora: si no hay créditos, mandamos a comprar créditos
-    toast({
-      title: "Te faltan créditos",
-      description: "Comprá créditos para poder iniciar partidas.",
-      variant: "destructive",
-    });
-
-    closeAll();
-    window.location.href = "/buy-credits";
+    try {
+      setStep("loading");
+      const response = await createGameContract({
+        slug: game.id,
+        fecha_inicio: start,
+        fecha_fin: end,
+      });
+      setResult({ saldo_restante: response.saldo_restante });
+      setStep("success");
+      onPurchased?.();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error inesperado";
+      if (message.includes("saldo_insuficiente") || message.includes("HTTP 402")) {
+        toast({
+          title: "Saldo insuficiente",
+          description: "Necesitás comprar créditos para contratar este juego.",
+          variant: "destructive",
+        });
+        closeAll();
+        window.location.href = "/buy-credits";
+        return;
+      }
+      setStep("confirm");
+      toast({
+        title: "No se pudo contratar",
+        description: message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -110,28 +130,10 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
 
         {step === "success" && (
           <div className="space-y-4">
-            <div className="text-sm">✅ Contratación realizada.</div>
-
-            {result?.trivia_credentials && (
-              <div className="rounded-lg border p-3 text-sm space-y-1">
-                <div className="font-semibold">Acceso Trivia Admin</div>
-                {result.trivia_credentials.admin_url && (
-                  <div>
-                    URL: <b>{result.trivia_credentials.admin_url}</b>
-                  </div>
-                )}
-                {result.trivia_credentials.username && (
-                  <div>
-                    Usuario: <b>{result.trivia_credentials.username}</b>
-                  </div>
-                )}
-                {result.trivia_credentials.password && (
-                  <div>
-                    Clave: <b>{result.trivia_credentials.password}</b>
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="text-sm">Contratacion realizada correctamente.</div>
+            <div className="rounded-lg border p-3 text-sm">
+              Saldo restante: <b>{result?.saldo_restante ?? 0}</b> creditos.
+            </div>
 
             <div className="flex justify-end gap-2">
               <Button variant="glow" onClick={closeAll}>

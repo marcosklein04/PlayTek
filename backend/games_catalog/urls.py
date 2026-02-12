@@ -1,7 +1,6 @@
 from django.urls import path
 from . import views
 from . import ui_views
-from .models import Question, Choice
 
 
 urlpatterns = [
@@ -33,5 +32,13 @@ urlpatterns = [
     path("runner/sessions/<uuid:session_id>/finish", views.runner_finalizar_sesion),
 
     path("juegos", ui_views.catalogo_page, name="catalogo_ui"),
+
+    # Cotratos (API)
+    path("contracts", views.crear_contrato_juego),
+    path("contracts/mine", views.mis_contratos),
+    path("contracts/<int:contract_id>/start", views.iniciar_juego_contrato),
+    path("contracts/<int:contract_id>/preview", views.preview_juego_contrato),
+    path("contracts/<int:contract_id>/customization", views.obtener_customizacion_contrato),
+    path("contracts/<int:contract_id>/customization/save", views.guardar_customizacion_contrato),
 
 ]

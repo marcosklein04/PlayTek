@@ -18,4 +18,12 @@ urlpatterns = [
     path("games/sessions", views.mis_sesiones),
     path("games/sessions/<uuid:session_id>", views.obtener_sesion),
     path("games/sessions/<uuid:session_id>/finish", views.finalizar_sesion),
+
+    # Contracts
+    path("contracts", views.crear_contrato_juego),
+    path("contracts/mine", views.mis_contratos),
+    path("contracts/<int:contract_id>/start", views.iniciar_juego_contrato),
+    path("contracts/<int:contract_id>/preview", views.preview_juego_contrato),
+    path("contracts/<int:contract_id>/customization", views.obtener_customizacion_contrato),
+    path("contracts/<int:contract_id>/customization/save", views.guardar_customizacion_contrato),
 ]

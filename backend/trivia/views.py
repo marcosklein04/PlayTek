@@ -5,9 +5,6 @@ from django.shortcuts import render, get_object_or_404
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
-from django.db.models import IntegerField
-from django.db.models.functions import Cast
-from django.db.models.expressions import RawSQL
 from .models import Question
 from games_catalog.models import GameSession
 
@@ -39,6 +36,15 @@ def _require_runner_session(request, body=None):
     return sesion, None
 
 
+def _session_customization(sesion):
+    state = sesion.client_state or {}
+    customization = state.get("customization") or {}
+    if not isinstance(customization, dict):
+        customization = {}
+    preview_mode = bool(state.get("preview_mode", False))
+    return customization, preview_mode
+
+
 @require_GET
 def trivia_runner_page(request):
     return render(request, "runner/trivia/index.html")
@@ -51,6 +57,7 @@ def runner_trivia_state(request):
         return err
 
     state = sesion.client_state or {}
+    customization, preview_mode = _session_customization(sesion)
     trivia = state.get("trivia") or {}
 
     current = trivia.get("current")
@@ -58,8 +65,10 @@ def runner_trivia_state(request):
         trivia = dict(trivia)
         trivia["current"] = {k: v for k, v in current.items() if k != "correct"}
 
-    return JsonResponse({"trivia": trivia}, status=200)
-from .models import Question
+    return JsonResponse(
+        {"trivia": trivia, "customization": customization, "preview_mode": preview_mode},
+        status=200,
+    )
 
 @csrf_exempt
 @require_GET
@@ -81,6 +90,28 @@ def runner_trivia_next(request):
         return JsonResponse({"question": public}, status=200)
 
     asked_ids = trivia.get("asked_ids", [])
+
+    customization, _ = _session_customization(sesion)
+    rules = customization.get("rules") if isinstance(customization, dict) else {}
+    max_questions = 0
+    if isinstance(rules, dict):
+        try:
+            max_questions = int(rules.get("max_questions") or 0)
+        except Exception:
+            max_questions = 0
+
+    if max_questions > 0 and len(asked_ids) >= max_questions:
+        result = {
+            "score": trivia.get("score", 0),
+            "answered": trivia.get("answered", 0),
+            "correct": trivia.get("correct", 0),
+        }
+
+        sesion.status = GameSession.Status.FINISHED
+        sesion.ended_at = timezone.now()
+        sesion.result = result
+        sesion.save(update_fields=["status", "ended_at", "result"])
+        return JsonResponse({"finished": True, "result": result}, status=200)
 
     q = (
         Question.objects
@@ -184,8 +215,19 @@ def runner_trivia_answer(request):
     trivia.setdefault("score", 0)
     trivia.setdefault("correct", 0)
 
+    points_per_correct = 100
+    customization, _ = _session_customization(sesion)
+    rules = customization.get("rules") if isinstance(customization, dict) else {}
+    if isinstance(rules, dict):
+        try:
+            cfg_points = int(rules.get("points_per_correct") or 100)
+            if cfg_points > 0:
+                points_per_correct = cfg_points
+        except Exception:
+            points_per_correct = 100
+
     if is_correct:
-        trivia["score"] += 100
+        trivia["score"] += points_per_correct
         trivia["correct"] += 1
 
     trivia["last_answer"] = {

@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Gamepad2,
   FolderOpen,
+  SlidersHorizontal,
   Settings,
   LogOut,
   ChevronLeft,
@@ -20,6 +21,7 @@ const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/catalog', label: 'Catálogo', icon: Gamepad2 },
   { path: '/my-games', label: 'Mis Juegos', icon: FolderOpen },
+  { path: '/my-contracts', label: 'Mis Contratos', icon: SlidersHorizontal },
 
   // ✅ NUEVO
   { path: '/buy-credits', label: 'Comprar créditos', icon: Wallet },
@@ -65,7 +67,9 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          const isContractsCustomization =
+            item.path === "/my-contracts" && location.pathname.startsWith("/contracts/");
+          const isActive = location.pathname === item.path || isContractsCustomization;
           const Icon = item.icon;
 
           return (
