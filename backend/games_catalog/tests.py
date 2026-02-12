@@ -169,3 +169,28 @@ class GamesCatalogContractDatesTests(TestCase):
 
         expired_contract.refresh_from_db()
         self.assertEqual(expired_contract.estado, ContratoJuego.Estado.FINALIZADO)
+
+    def test_start_game_blocks_event_mode_outside_contracted_dates(self):
+        today = timezone.localdate()
+        tomorrow = today + timedelta(days=1)
+
+        create_response = self._post_json(
+            "/api/contracts",
+            {
+                "slug": self.game.slug,
+                "fechas_evento": [tomorrow.isoformat()],
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+
+        wallet_before = Wallet.objects.get(user=self.user).balance
+        start_response = self._post_json(f"/api/juegos/{self.game.slug}/iniciar", {})
+
+        self.assertEqual(start_response.status_code, 409)
+        payload = start_response.json()
+        self.assertEqual(payload.get("error"), "solo_preview_fuera_de_fecha")
+        self.assertEqual(payload.get("launch_mode"), "preview")
+        self.assertEqual(payload.get("next_available_date"), tomorrow.isoformat())
+
+        wallet_after = Wallet.objects.get(user=self.user).balance
+        self.assertEqual(wallet_after, wallet_before)

@@ -438,6 +438,20 @@ def _finalize_expired_contracts_for_user(user, today: date):
     )
 
 
+def _next_contract_available_date(contrato: ContratoJuego, today: date):
+    fechas_evento = sorted(_event_dates_from_contract(contrato))
+    if fechas_evento:
+        for event_date in fechas_evento:
+            if event_date >= today:
+                return event_date
+        return None
+    if contrato.fecha_inicio >= today:
+        return contrato.fecha_inicio
+    if contrato.fecha_inicio <= today <= contrato.fecha_fin:
+        return today
+    return None
+
+
 def _get_user_contract_or_404(request, contract_id: int):
     return get_object_or_404(
         ContratoJuego.objects.select_related("juego", "customization", "trivia_question_set").prefetch_related("fechas_evento"),
@@ -1323,7 +1337,9 @@ def iniciar_juego(request, slug: str):
         return JsonResponse({"error": "costo_invalido", "costo": costo_base}, status=400)
 
     hoy = timezone.localdate()
-    contratos_activos = (
+    _finalize_expired_contracts_for_user(request.user, hoy)
+
+    contratos_activos_qs = (
         ContratoJuego.objects
         .select_related("customization", "trivia_question_set")
         .prefetch_related("fechas_evento")
@@ -1331,15 +1347,46 @@ def iniciar_juego(request, slug: str):
             usuario=request.user,
             juego=juego,
             estado=ContratoJuego.Estado.ACTIVO,
-            fecha_inicio__lte=hoy,
             fecha_fin__gte=hoy,
         )
         .order_by("-fecha_inicio", "-id")
     )
+    contratos_activos = list(contratos_activos_qs)
     contrato_activo = next(
         (contrato for contrato in contratos_activos if _contract_is_available_on_date(contrato, hoy)),
         None,
     )
+
+    if contrato_activo is None and contratos_activos:
+        next_dates = []
+        contract_dates = []
+        for contrato in contratos_activos:
+            available_dates = sorted(_event_dates_from_contract(contrato))
+            next_date = _next_contract_available_date(contrato, hoy)
+            if next_date:
+                next_dates.append(next_date)
+            contract_dates.append(
+                {
+                    "contract_id": contrato.id,
+                    "fecha_inicio": contrato.fecha_inicio.isoformat(),
+                    "fecha_fin": contrato.fecha_fin.isoformat(),
+                    "fechas_evento": [item.isoformat() for item in available_dates],
+                }
+            )
+
+        next_available_date = min(next_dates).isoformat() if next_dates else None
+        return JsonResponse(
+            {
+                "error": "solo_preview_fuera_de_fecha",
+                "launch_mode": "preview",
+                "hoy": hoy.isoformat(),
+                "next_available_date": next_available_date,
+                "contracts": contract_dates,
+                "preview_endpoint": request.build_absolute_uri(f"/api/juegos/{juego.slug}/preview"),
+            },
+            status=409,
+        )
+
     cobra_partida = contrato_activo is None
     costo = costo_base if cobra_partida else 0
 
