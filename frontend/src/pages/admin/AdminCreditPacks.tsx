@@ -81,7 +81,7 @@ export default function AdminCreditPacks() {
     <div className="min-h-screen bg-background">
       <Sidebar />
       <main className="ml-64 p-8">
-        <h1 className="text-3xl font-display font-bold text-foreground">Admin · Credit Packs</h1>
+        <h1 className="text-3xl font-display font-bold text-foreground">Superadmin · Packs de Créditos</h1>
 
         {loading && <p className="text-sm text-muted-foreground mt-6">Cargando...</p>}
 

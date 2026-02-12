@@ -26,8 +26,8 @@ const navItems = [
 ];
 
 const adminItems = [
-  { path: "/admin/overview", label: "Admin · Overview", icon: LayoutDashboard },
-  { path: "/admin/credit-packs", label: "Admin · Packs", icon: Wallet },
+  { path: "/admin/overview", label: "Superadmin · Panel", icon: LayoutDashboard },
+  { path: "/admin/credit-packs", label: "Superadmin · Packs", icon: Wallet },
 ];
 
 export function Sidebar() {
@@ -118,7 +118,7 @@ export function Sidebar() {
           <div className={cn("pt-4 mt-4 border-t border-sidebar-border", collapsed && "pt-3")}>
             {!collapsed && (
               <div className="px-4 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Admin
+                Superadmin
               </div>
             )}
 

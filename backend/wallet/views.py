@@ -5,7 +5,7 @@ import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import redirect
 from django.utils.dateparse import parse_date
@@ -45,6 +45,22 @@ def _parse_positive_int(value):
     if parsed <= 0:
         return None
     return parsed
+
+
+TRANSACTION_KIND_LABELS = {
+    LedgerEntry.Kind.TOPUP: "Recarga",
+    LedgerEntry.Kind.SPEND: "Gasto",
+    LedgerEntry.Kind.REFUND: "Reembolso",
+    LedgerEntry.Kind.ADJUST: "Ajuste",
+}
+
+TOPUP_STATUS_LABELS = {
+    WalletTopup.Status.PENDING: "Pendiente",
+    WalletTopup.Status.APPROVED: "Aprobado",
+    WalletTopup.Status.REJECTED: "Rechazado",
+    WalletTopup.Status.CANCELLED: "Cancelado",
+    WalletTopup.Status.EXPIRED: "Expirado",
+}
 
 
 @require_GET
@@ -268,6 +284,24 @@ def admin_super_overview(request):
         )
 
     contracts_qs = contracts_qs.distinct()
+    contracts_count = contracts_qs.count()
+    ledger_count = ledger_qs.count()
+    topups_count = topups_qs.count()
+
+    ledger_totals = ledger_qs.aggregate(
+        total_creditos=Sum("amount"),
+        total_recargas=Sum("amount", filter=Q(kind=LedgerEntry.Kind.TOPUP)),
+        total_gastos=Sum("amount", filter=Q(kind=LedgerEntry.Kind.SPEND)),
+        total_reembolsos=Sum("amount", filter=Q(kind=LedgerEntry.Kind.REFUND)),
+        total_ajustes=Sum("amount", filter=Q(kind=LedgerEntry.Kind.ADJUST)),
+    )
+
+    topups_aprobados_qs = topups_qs.filter(status=WalletTopup.Status.APPROVED)
+    topups_aprobados_count = topups_aprobados_qs.count()
+    topups_aprobados_totals = topups_aprobados_qs.aggregate(
+        total_creditos=Sum("credits"),
+        total_ars=Sum("amount_ars"),
+    )
 
     contracts = list(contracts_qs[:250])
     ledger_entries = list(ledger_qs[:300])
@@ -296,9 +330,21 @@ def admin_super_overview(request):
             "ok": True,
             "summary": {
                 "clients": len(clients),
-                "contracts": contracts_qs.count(),
-                "ledger_entries": ledger_qs.count(),
-                "topups": topups_qs.count(),
+                "contracts": contracts_count,
+                "ledger_entries": ledger_count,
+                "topups": topups_count,
+                "credits_totals": {
+                    "recargados": int(ledger_totals.get("total_recargas") or 0),
+                    "gastados": abs(int(ledger_totals.get("total_gastos") or 0)),
+                    "reembolsados": int(ledger_totals.get("total_reembolsos") or 0),
+                    "ajustes": int(ledger_totals.get("total_ajustes") or 0),
+                    "neto": int(ledger_totals.get("total_creditos") or 0),
+                },
+                "topups_totals": {
+                    "aprobados": topups_aprobados_count,
+                    "creditos_aprobados": int(topups_aprobados_totals.get("total_creditos") or 0),
+                    "ars_aprobado": str(topups_aprobados_totals.get("total_ars") or 0),
+                },
             },
             "filters": {
                 "date_from": date_from.isoformat() if date_from else None,
@@ -325,11 +371,11 @@ def admin_super_overview(request):
                     for value, label in ContratoJuego.Estado.choices
                 ],
                 "transaction_kinds": [
-                    {"value": value, "label": label}
+                    {"value": value, "label": TRANSACTION_KIND_LABELS.get(value, label)}
                     for value, label in LedgerEntry.Kind.choices
                 ],
                 "topup_statuses": [
-                    {"value": value, "label": label}
+                    {"value": value, "label": TOPUP_STATUS_LABELS.get(value, label)}
                     for value, label in WalletTopup.Status.choices
                 ],
             },
@@ -357,6 +403,7 @@ def admin_super_overview(request):
                     "id": item.id,
                     "source": "ledger",
                     "kind": item.kind,
+                    "kind_label": TRANSACTION_KIND_LABELS.get(item.kind, item.kind),
                     "amount": item.amount,
                     "reference_type": item.reference_type,
                     "reference_id": item.reference_id,
@@ -373,6 +420,7 @@ def admin_super_overview(request):
                     "username": t.user.username,
                     "company": _company_name_for_user(t.user),
                     "status": t.status,
+                    "status_label": TOPUP_STATUS_LABELS.get(t.status, t.status),
                     "credits": t.credits,
                     "amount_ars": str(t.amount_ars),
                     "pack_name": t.pack.name if t.pack_id else "",

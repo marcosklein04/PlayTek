@@ -20,6 +20,18 @@ export type SuperadminOverviewResponse = {
     contracts: number;
     ledger_entries: number;
     topups: number;
+    credits_totals: {
+      recargados: number;
+      gastados: number;
+      reembolsados: number;
+      ajustes: number;
+      neto: number;
+    };
+    topups_totals: {
+      aprobados: number;
+      creditos_aprobados: number;
+      ars_aprobado: string;
+    };
   };
   filters: {
     date_from: string | null;
@@ -64,6 +76,7 @@ export type SuperadminOverviewResponse = {
     id: number;
     source: "ledger";
     kind: string;
+    kind_label?: string;
     amount: number;
     reference_type: string;
     reference_id: string;
@@ -77,6 +90,7 @@ export type SuperadminOverviewResponse = {
     username: string;
     company: string;
     status: string;
+    status_label?: string;
     credits: number;
     amount_ars: string;
     pack_name: string;

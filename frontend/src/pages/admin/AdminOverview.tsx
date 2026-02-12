@@ -14,6 +14,15 @@ function formatDate(value?: string | null) {
   }
 }
 
+function formatCredits(value?: number | null) {
+  return `${Number(value || 0).toLocaleString("es-AR")} créditos`;
+}
+
+function formatArs(value?: string | number | null) {
+  const parsed = Number(value || 0);
+  return `$${parsed.toLocaleString("es-AR")} ARS`;
+}
+
 function formatEventDates(contract: SuperadminOverviewResponse["contracts"][number]) {
   const eventDates = (contract.fechas_evento || []).slice().sort();
   if (eventDates.length === 1) return eventDates[0];
@@ -94,8 +103,10 @@ export default function AdminOverview() {
       <Sidebar />
       <main className="ml-64 p-8 space-y-6">
         <div>
-          <h1 className="text-3xl font-display font-bold text-foreground">Superadmin · Overview</h1>
-          <p className="text-muted-foreground mt-1">Clientes, contratos por fecha y movimientos de billetera.</p>
+          <h1 className="text-3xl font-display font-bold text-foreground">Superadmin · Panel General</h1>
+          <p className="text-muted-foreground mt-1">
+            Clientes, contratos por fecha y movimientos de billetera.
+          </p>
         </div>
 
         <div className="glass-card p-4 space-y-3">
@@ -191,7 +202,7 @@ export default function AdminOverview() {
 
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-end">
             <div>
-              <label className="text-xs text-muted-foreground">Estado topup</label>
+              <label className="text-xs text-muted-foreground">Estado recarga</label>
               <select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={topupStatus}
@@ -231,17 +242,40 @@ export default function AdminOverview() {
                 <p className="text-2xl font-bold">{data.summary.contracts}</p>
               </div>
               <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Mov. Wallet</p>
+                <p className="text-xs text-muted-foreground uppercase">Movimientos wallet</p>
                 <p className="text-2xl font-bold">{data.summary.ledger_entries}</p>
               </div>
               <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Topups</p>
+                <p className="text-xs text-muted-foreground uppercase">Recargas</p>
                 <p className="text-2xl font-bold">{data.summary.topups}</p>
               </div>
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              <div className="glass-card p-4">
+                <p className="text-xs text-muted-foreground uppercase">Créditos recargados</p>
+                <p className="text-xl font-bold">{formatCredits(data.summary.credits_totals.recargados)}</p>
+              </div>
+              <div className="glass-card p-4">
+                <p className="text-xs text-muted-foreground uppercase">Créditos gastados</p>
+                <p className="text-xl font-bold">{formatCredits(data.summary.credits_totals.gastados)}</p>
+              </div>
+              <div className="glass-card p-4">
+                <p className="text-xs text-muted-foreground uppercase">Créditos netos</p>
+                <p className="text-xl font-bold">{formatCredits(data.summary.credits_totals.neto)}</p>
+              </div>
+              <div className="glass-card p-4">
+                <p className="text-xs text-muted-foreground uppercase">Recargas aprobadas</p>
+                <p className="text-xl font-bold">{data.summary.topups_totals.aprobados}</p>
+              </div>
+              <div className="glass-card p-4">
+                <p className="text-xs text-muted-foreground uppercase">Monto aprobado</p>
+                <p className="text-xl font-bold">{formatArs(data.summary.topups_totals.ars_aprobado)}</p>
+              </div>
+            </div>
+
             <section className="glass-card p-4 space-y-3">
-              <h2 className="text-lg font-semibold">Contratos recientes</h2>
+              <h2 className="text-lg font-semibold">Contratos</h2>
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -251,6 +285,7 @@ export default function AdminOverview() {
                       <th className="py-2 pr-3">Empresa</th>
                       <th className="py-2 pr-3">Juego</th>
                       <th className="py-2 pr-3">Fechas evento</th>
+                      <th className="py-2 pr-3">Creado</th>
                       <th className="py-2 pr-3">Estado</th>
                       <th className="py-2 pr-3">Costo</th>
                     </tr>
@@ -263,6 +298,7 @@ export default function AdminOverview() {
                         <td className="py-2 pr-3">{contract.client_company || "—"}</td>
                         <td className="py-2 pr-3">{contract.game_name}</td>
                         <td className="py-2 pr-3">{formatEventDates(contract)}</td>
+                        <td className="py-2 pr-3">{formatDate(contract.creado_en)}</td>
                         <td className="py-2 pr-3">{contract.estado}</td>
                         <td className="py-2 pr-3">{contract.costo_por_partida} créditos</td>
                       </tr>
@@ -320,8 +356,8 @@ export default function AdminOverview() {
                         <td className="py-2 pr-3">{formatDate(item.created_at)}</td>
                         <td className="py-2 pr-3">{item.username}</td>
                         <td className="py-2 pr-3">{item.company || "—"}</td>
-                        <td className="py-2 pr-3">{item.kind}</td>
-                        <td className="py-2 pr-3">{item.amount}</td>
+                        <td className="py-2 pr-3">{item.kind_label || item.kind}</td>
+                        <td className="py-2 pr-3">{formatCredits(item.amount)}</td>
                         <td className="py-2 pr-3">
                           {item.reference_type} · {item.reference_id}
                         </td>
@@ -333,7 +369,7 @@ export default function AdminOverview() {
             </section>
 
             <section className="glass-card p-4 space-y-3">
-              <h2 className="text-lg font-semibold">Topups / recargas</h2>
+              <h2 className="text-lg font-semibold">Recargas</h2>
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -353,10 +389,10 @@ export default function AdminOverview() {
                         <td className="py-2 pr-3">{formatDate(item.created_at)}</td>
                         <td className="py-2 pr-3">{item.username}</td>
                         <td className="py-2 pr-3">{item.company || "—"}</td>
-                        <td className="py-2 pr-3">{item.status}</td>
+                        <td className="py-2 pr-3">{item.status_label || item.status}</td>
                         <td className="py-2 pr-3">{item.pack_name || "—"}</td>
                         <td className="py-2 pr-3">{item.credits}</td>
-                        <td className="py-2 pr-3">{item.amount_ars}</td>
+                        <td className="py-2 pr-3">{formatArs(item.amount_ars)}</td>
                       </tr>
                     ))}
                   </tbody>
