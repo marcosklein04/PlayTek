@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Wallet,
+  Coins,
   Gamepad2,
   FolderOpen,
   Settings,
@@ -30,7 +31,7 @@ const adminItems = [
 ];
 
 export function Sidebar() {
-  const { user, logout, contractedGames } = useAuth();
+  const { user, logout, contractedGames, walletBalance } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const isAdmin = user?.role === "admin";
@@ -94,6 +95,23 @@ export function Sidebar() {
             </NavLink>
           );
         })}
+
+        <div className={cn("pt-4 mt-4 border-t border-sidebar-border", collapsed && "pt-3")}>
+          <div
+            className={cn(
+              "rounded-lg border border-primary/20 bg-primary/5",
+              collapsed ? "px-2 py-3 flex flex-col items-center gap-2" : "px-4 py-3"
+            )}
+          >
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+              <Coins className="w-4 h-4 text-primary" />
+              {!collapsed && <span>Créditos</span>}
+            </div>
+            <p className={cn("font-semibold text-primary", collapsed ? "text-xs" : "text-lg")}>
+              {walletBalance === null ? "..." : walletBalance.toLocaleString("es-AR")}
+            </p>
+          </div>
+        </div>
 
         {/* 👇 ACA VA EL BLOQUE ADMIN */}
         {isAdmin && (

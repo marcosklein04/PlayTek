@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Game } from "@/types";
 import { createGameContract } from "@/api/contracts";
+import { useAuth } from "@/context/AuthContext";
 
 type Props = {
   game: Game | null;
@@ -16,6 +17,7 @@ type Props = {
 
 export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
   const { toast } = useToast();
+  const { refreshWalletBalance } = useAuth();
   const [step, setStep] = useState<"dates" | "confirm" | "loading" | "success">("dates");
   const [eventDates, setEventDates] = useState<string[]>([""]);
   const [result, setResult] = useState<{ saldo_restante: number } | null>(null);
@@ -60,6 +62,7 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
         fechas_evento: uniqueDates,
       });
       setResult({ saldo_restante: response.saldo_restante });
+      await refreshWalletBalance();
       setStep("success");
       onPurchased?.();
     } catch (error) {

@@ -22,6 +22,11 @@ export type WalletCheckoutResponse = {
   error?: string;
 };
 
+export type MyWalletResponse = {
+  usuario: string;
+  saldo: number;
+};
+
 export async function fetchCreditPacks() {
   return apiFetch<{ resultados: CreditPack[] }>("/api/credit-packs", {
     method: "GET",
@@ -38,5 +43,11 @@ export async function createWalletCheckout(pack_id: number) {
   }>("/api/me/wallet/checkout", {
     method: "POST",
     body: JSON.stringify({ pack_id }),
+  });
+}
+
+export async function fetchMyWallet() {
+  return apiFetch<MyWalletResponse>("/api/me/wallet", {
+    method: "GET",
   });
 }

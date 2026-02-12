@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCreditPacks, createWalletCheckout, CreditPack } from "@/api/wallet";
 import { useSearchParams } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 
 export default function BuyCredits() {
   const { toast } = useToast();
+  const { refreshWalletBalance } = useAuth();
   const [packs, setPacks] = useState<CreditPack[]>([]);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<number | null>(null);
@@ -62,6 +64,7 @@ export default function BuyCredits() {
         if (cancelled) return;
 
         if (data.credited) {
+          await refreshWalletBalance();
           toast({ title: "✅ Créditos acreditados", description: "Saldo actualizado." });
           window.history.replaceState({}, "", "/buy-credits");
           return;
@@ -78,7 +81,7 @@ export default function BuyCredits() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, toast]);
+  }, [searchParams, toast, refreshWalletBalance]);
 
   // 3) iniciar checkout
   const handleBuy = async (pack: CreditPack) => {

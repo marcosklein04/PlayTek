@@ -1,15 +1,18 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { User, ContractedGame } from "@/types";
 import { fetchGames } from "@/api/games";
 import { fetchMyContracts } from "@/api/contracts";
 import { mapApiGameToGame } from "@/mappers/gameMapper";
 import { apiLogin, apiRegister } from "@/api/auth";
+import { fetchMyWallet } from "@/api/wallet";
 
 type AuthContextType = {
   user: User | null;
   isAuthenticated: boolean;
   contractedGames: ContractedGame[];
+  walletBalance: number | null;
   refreshContractedGames: () => Promise<void>;
+  refreshWalletBalance: () => Promise<void>;
   login: (username: string, password: string) => Promise<boolean>;
   register: (username: string, password: string, organization: string, name: string) => Promise<boolean>;
   logout: () => void;
@@ -34,6 +37,22 @@ function loadUserFromStorage(): User | null {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(() => loadUserFromStorage());
   const [contractedGames, setContractedGames] = useState<ContractedGame[]>([]);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  const refreshWalletBalance = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      setWalletBalance(null);
+      return;
+    }
+
+    try {
+      const wallet = await fetchMyWallet();
+      setWalletBalance(Number(wallet.saldo ?? 0));
+    } catch {
+      setWalletBalance(null);
+    }
+  }, []);
 
   const refreshContractedGames = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -78,7 +97,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               description: "",
               image: "",
               category: "general",
-              pricing: { price: s.costo_cobrado ?? 0, type: "per-event", period: "event" },
+              pricing: {
+                price: c.costo_cobrado ?? 0,
+                type: "per-event",
+                currency: "credits",
+                period: "event",
+              },
               modality: [],
               features: [],
               isPopular: false,
@@ -101,38 +125,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-const register = useCallback(
-  async (username: string, password: string, organization: string, name: string) => {
-    try {
-      const res = await apiRegister({
-        username,
-        password,
-        name,
-        organization,
-      });
+  const hydrateSessionData = useCallback(async () => {
+    await Promise.all([refreshContractedGames(), refreshWalletBalance()]);
+  }, [refreshContractedGames, refreshWalletBalance]);
 
-      localStorage.setItem(TOKEN_KEY, res.token);
+  const register = useCallback(
+    async (username: string, password: string, organization: string, name: string) => {
+      try {
+        const res = await apiRegister({
+          username,
+          password,
+          name,
+          organization,
+        });
 
-      const u = res.user;
-      const mappedUser: User = {
-        id: String(u.id),
-        email: u.email || "",
-        organization: u.organization || organization || "",
-        role: u.role || "client",
-        name: u.name || u.username,
-      };
+        localStorage.setItem(TOKEN_KEY, res.token);
 
-      localStorage.setItem(USER_KEY, JSON.stringify(mappedUser));
-      setUser(mappedUser);
+        const u = res.user;
+        const mappedUser: User = {
+          id: String(u.id),
+          email: u.email || "",
+          organization: u.organization || organization || "",
+          role: u.role || "client",
+          name: u.name || u.username,
+        };
 
-      await refreshContractedGames();
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  [refreshContractedGames]
-);
+        localStorage.setItem(USER_KEY, JSON.stringify(mappedUser));
+        setUser(mappedUser);
+
+        await hydrateSessionData();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [hydrateSessionData]
+  );
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -149,20 +177,21 @@ const register = useCallback(
           email: u.email || "",
           organization: u.organization || "",
           role: u.role || "client",
+          name: u.name || u.username || "",
         };
 
         localStorage.setItem(USER_KEY, JSON.stringify(mappedUser));
         setUser(mappedUser);
 
         // ✅ cargar "mis juegos" apenas loguea
-        await refreshContractedGames();
+        await hydrateSessionData();
 
         return true;
       } catch {
         return false;
       }
     },
-    [refreshContractedGames]
+    [hydrateSessionData]
   );
 
   const logout = useCallback(() => {
@@ -170,12 +199,15 @@ const register = useCallback(
     localStorage.removeItem(USER_KEY);
     setUser(null);
     setContractedGames([]);
+    setWalletBalance(null);
   }, []);
 
-  // ✅ si el usuario ya está en storage (refresh de página), cargamos juegos
+  // ✅ si el usuario ya está en storage (refresh de página), cargamos juegos y saldo
   useEffect(() => {
-    if (user) refreshContractedGames();
-  }, [user, refreshContractedGames]);
+    if (user) {
+      void hydrateSessionData();
+    }
+  }, [user, hydrateSessionData]);
 
   return (
     <AuthContext.Provider
@@ -183,7 +215,9 @@ const register = useCallback(
         user,
         isAuthenticated: !!user,
         contractedGames,
+        walletBalance,
         refreshContractedGames,
+        refreshWalletBalance,
         login,
         register,
         logout,
