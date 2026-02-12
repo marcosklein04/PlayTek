@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import secrets
@@ -14,9 +16,10 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from api_auth.auth import token_required
+from trivia.models import Choice, Question, QuestionSet
+from trivia.services import get_company_for_user, pick_question_set_for_session
 from wallet.models import Wallet, LedgerEntry
 from .models import ContratoJuego, Game, GameCustomization, GameSession
-from trivia.services import pick_question_set_for_session
 
 
 CONTRACT_ASSET_FIELDS = {
@@ -35,6 +38,7 @@ ALLOWED_ASSET_CONTENT_TYPES = {
     "image/gif",
 }
 MAX_ASSET_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+MAX_TRIVIA_CHOICES = 6
 
 
 def _parse_date(s: str):
@@ -87,6 +91,9 @@ def _default_customization_for_game(game_slug: str) -> dict:
                 "position": "center",
                 "font_size": 96,
             },
+            "content": {
+                "question_set_id": None,
+            },
         }
 
     return {
@@ -123,6 +130,9 @@ def _default_customization_for_game(game_slug: str) -> dict:
             "opacity": 0.28,
             "position": "center",
             "font_size": 96,
+        },
+        "content": {
+            "question_set_id": None,
         },
     }
 
@@ -257,9 +267,157 @@ def _validate_uploaded_asset(uploaded_file):
     return None
 
 
+def _is_contract_editable(contrato: ContratoJuego) -> bool:
+    return contrato.estado not in [ContratoJuego.Estado.CANCELADO, ContratoJuego.Estado.FINALIZADO]
+
+
+def _set_contract_customization_question_set_id(contrato: ContratoJuego, question_set_id: int | None):
+    default_config = _default_customization_for_game(contrato.juego.slug)
+    customization, _ = GameCustomization.objects.get_or_create(
+        contrato=contrato,
+        defaults={"config": default_config},
+    )
+
+    current_config = _deep_merge_dict(
+        default_config,
+        _normalize_asset_urls_for_storage(customization.config or {}),
+    )
+    current_value = _nested_get(current_config, ("content", "question_set_id"))
+    if current_value == question_set_id:
+        return
+
+    _nested_set(current_config, ("content", "question_set_id"), question_set_id)
+    customization.config = current_config
+    customization.save(update_fields=["config", "actualizado_en"])
+
+
+def _get_or_create_contract_trivia_question_set(contrato: ContratoJuego, *, create: bool):
+    company = get_company_for_user(contrato.usuario)
+    if not company:
+        return None, JsonResponse({"error": "usuario_sin_company"}, status=409)
+
+    if contrato.trivia_question_set_id:
+        question_set = QuestionSet.objects.filter(
+            id=contrato.trivia_question_set_id,
+            company=company,
+        ).first()
+        if question_set:
+            if not question_set.is_active:
+                question_set.is_active = True
+                question_set.save(update_fields=["is_active"])
+            _set_contract_customization_question_set_id(contrato, question_set.id)
+            return question_set, None
+
+        contrato.trivia_question_set = None
+        contrato.save(update_fields=["trivia_question_set", "actualizado_en"])
+        _set_contract_customization_question_set_id(contrato, None)
+
+    if not create:
+        return None, None
+
+    question_set_name = f"Contrato #{contrato.id} - Trivia"
+    question_set, _ = QuestionSet.objects.get_or_create(
+        company=company,
+        name=question_set_name,
+        defaults={"is_active": True},
+    )
+    if not question_set.is_active:
+        question_set.is_active = True
+        question_set.save(update_fields=["is_active"])
+
+    if contrato.trivia_question_set_id != question_set.id:
+        contrato.trivia_question_set = question_set
+        contrato.save(update_fields=["trivia_question_set", "actualizado_en"])
+
+    _set_contract_customization_question_set_id(contrato, question_set.id)
+    return question_set, None
+
+
+def _get_contract_trivia_question_set_for_play(contrato: ContratoJuego):
+    if not contrato.trivia_question_set_id:
+        return None
+
+    question_set = QuestionSet.objects.filter(
+        id=contrato.trivia_question_set_id,
+        is_active=True,
+    ).first()
+    if not question_set:
+        return None
+
+    company = get_company_for_user(contrato.usuario)
+    if company and question_set.company_id != company.id:
+        return None
+
+    has_questions = Question.objects.filter(question_set=question_set, is_active=True).exists()
+    if not has_questions:
+        return None
+
+    return question_set
+
+
+def _serialize_trivia_question(question: Question):
+    choices = list(question.choices.all().order_by("id"))
+    return {
+        "id": question.id,
+        "text": question.text,
+        "is_active": question.is_active,
+        "choices": [
+            {
+                "id": choice.id,
+                "text": choice.text,
+                "is_correct": choice.is_correct,
+            }
+            for choice in choices
+        ],
+    }
+
+
+def _validate_trivia_question_payload(payload):
+    if not isinstance(payload, dict):
+        return None, JsonResponse({"error": "payload_invalido"}, status=400)
+
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return None, JsonResponse({"error": "texto_pregunta_requerido"}, status=400)
+
+    raw_choices = payload.get("choices")
+    if not isinstance(raw_choices, list):
+        return None, JsonResponse({"error": "choices_requerido"}, status=400)
+
+    normalized_choices = []
+    for raw_choice in raw_choices[:MAX_TRIVIA_CHOICES]:
+        if isinstance(raw_choice, dict):
+            choice_text = str(raw_choice.get("text") or "").strip()
+            is_correct = bool(raw_choice.get("is_correct", False))
+        else:
+            choice_text = str(raw_choice or "").strip()
+            is_correct = False
+
+        if not choice_text:
+            continue
+        normalized_choices.append({"text": choice_text, "is_correct": is_correct})
+
+    if len(normalized_choices) < 2:
+        return None, JsonResponse({"error": "minimo_dos_opciones"}, status=400)
+
+    correct_count = sum(1 for c in normalized_choices if c["is_correct"])
+    if correct_count != 1:
+        return None, JsonResponse({"error": "debe_haber_una_opcion_correcta"}, status=400)
+
+    return {"text": text, "choices": normalized_choices}, None
+
+
+def _to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "si", "on"}
+
+
 def _get_user_contract_or_404(request, contract_id: int):
     return get_object_or_404(
-        ContratoJuego.objects.select_related("juego", "customization"),
+        ContratoJuego.objects.select_related("juego", "customization", "trivia_question_set"),
         id=contract_id,
         usuario=request.user,
     )
@@ -289,7 +447,9 @@ def _build_session_payload_for_contract(
 
     question_set = None
     if juego.slug == "trivia":
-        question_set = pick_question_set_for_session(user=request.user, juego=juego)
+        question_set = _get_contract_trivia_question_set_for_play(contrato)
+        if not question_set:
+            question_set = pick_question_set_for_session(user=request.user, juego=juego)
         if not question_set:
             return JsonResponse({"error": "sesion_sin_question_set"}, status=409)
 
@@ -431,7 +591,7 @@ def mis_contratos(request):
     qs = (
         ContratoJuego.objects
         .filter(usuario=request.user)
-        .select_related("juego", "customization")
+        .select_related("juego", "customization", "trivia_question_set")
         .order_by("-creado_en")
     )
     return JsonResponse({"resultados": [_serializar_contrato(c) for c in qs]}, status=200)
@@ -512,6 +672,260 @@ def guardar_customizacion_contrato(request, contract_id: int):
             "contract_id": contrato.id,
             "game_slug": contrato.juego.slug,
             "config": response_config,
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@token_required
+def contrato_trivia_questions(request, contract_id: int):
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.juego.slug != "trivia":
+        return JsonResponse({"error": "juego_no_soporta_preguntas_trivia"}, status=409)
+
+    if request.method == "GET":
+        question_set, error = _get_or_create_contract_trivia_question_set(contrato, create=False)
+        if error:
+            return error
+
+        if not question_set:
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "contract_id": contrato.id,
+                    "question_set_id": None,
+                    "questions": [],
+                },
+                status=200,
+            )
+
+        questions = (
+            Question.objects
+            .filter(question_set=question_set, is_active=True)
+            .prefetch_related("choices")
+            .order_by("id")
+        )
+        return JsonResponse(
+            {
+                "ok": True,
+                "contract_id": contrato.id,
+                "question_set_id": question_set.id,
+                "questions": [_serialize_trivia_question(q) for q in questions],
+            },
+            status=200,
+        )
+
+    if not _is_contract_editable(contrato):
+        return JsonResponse({"error": "contrato_no_editable"}, status=409)
+
+    payload, error = _leer_json(request)
+    if error:
+        return error
+
+    validated, validation_error = _validate_trivia_question_payload(payload)
+    if validation_error:
+        return validation_error
+
+    question_set, error = _get_or_create_contract_trivia_question_set(contrato, create=True)
+    if error:
+        return error
+
+    with transaction.atomic():
+        question = Question.objects.create(
+            question_set=question_set,
+            text=validated["text"],
+            is_active=True,
+        )
+        Choice.objects.bulk_create(
+            [
+                Choice(
+                    question=question,
+                    text=choice["text"],
+                    is_correct=choice["is_correct"],
+                )
+                for choice in validated["choices"]
+            ]
+        )
+
+    question = Question.objects.prefetch_related("choices").get(id=question.id)
+    return JsonResponse(
+        {
+            "ok": True,
+            "contract_id": contrato.id,
+            "question_set_id": question_set.id,
+            "question": _serialize_trivia_question(question),
+        },
+        status=201,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["PATCH", "DELETE"])
+@token_required
+def contrato_trivia_question_detalle(request, contract_id: int, question_id: int):
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.juego.slug != "trivia":
+        return JsonResponse({"error": "juego_no_soporta_preguntas_trivia"}, status=409)
+    if not _is_contract_editable(contrato):
+        return JsonResponse({"error": "contrato_no_editable"}, status=409)
+
+    question_set, error = _get_or_create_contract_trivia_question_set(contrato, create=False)
+    if error:
+        return error
+    if not question_set:
+        return JsonResponse({"error": "question_set_no_encontrado"}, status=404)
+
+    question = get_object_or_404(
+        Question.objects.prefetch_related("choices"),
+        id=question_id,
+        question_set=question_set,
+    )
+
+    if request.method == "DELETE":
+        question.delete()
+        return JsonResponse({"ok": True, "question_id": question_id}, status=200)
+
+    payload, error = _leer_json(request)
+    if error:
+        return error
+
+    validated, validation_error = _validate_trivia_question_payload(payload)
+    if validation_error:
+        return validation_error
+
+    with transaction.atomic():
+        question.text = validated["text"]
+        question.save(update_fields=["text"])
+        question.choices.all().delete()
+        Choice.objects.bulk_create(
+            [
+                Choice(
+                    question=question,
+                    text=choice["text"],
+                    is_correct=choice["is_correct"],
+                )
+                for choice in validated["choices"]
+            ]
+        )
+
+    question = Question.objects.prefetch_related("choices").get(id=question.id)
+    return JsonResponse(
+        {
+            "ok": True,
+            "contract_id": contrato.id,
+            "question_set_id": question_set.id,
+            "question": _serialize_trivia_question(question),
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_POST
+@token_required
+def contrato_trivia_import_csv(request, contract_id: int):
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.juego.slug != "trivia":
+        return JsonResponse({"error": "juego_no_soporta_preguntas_trivia"}, status=409)
+    if not _is_contract_editable(contrato):
+        return JsonResponse({"error": "contrato_no_editable"}, status=409)
+
+    uploaded_file = request.FILES.get("file")
+    if not uploaded_file:
+        return JsonResponse({"error": "archivo_requerido", "field": "file"}, status=400)
+
+    question_set, error = _get_or_create_contract_trivia_question_set(contrato, create=True)
+    if error:
+        return error
+
+    replace_existing = _to_bool(request.POST.get("replace"))
+
+    try:
+        content = uploaded_file.read().decode("utf-8-sig")
+    except Exception:
+        return JsonResponse({"error": "csv_invalido"}, status=400)
+
+    reader = csv.DictReader(io.StringIO(content))
+    expected_columns = {"question", "option_1", "option_2", "correct_option"}
+    columns = set(reader.fieldnames or [])
+    missing_columns = sorted(expected_columns - columns)
+    if missing_columns:
+        return JsonResponse(
+            {
+                "error": "csv_columnas_faltantes",
+                "columnas_requeridas": sorted(expected_columns),
+                "faltantes": missing_columns,
+            },
+            status=400,
+        )
+
+    imported = 0
+    errors = []
+
+    with transaction.atomic():
+        if replace_existing:
+            Question.objects.filter(question_set=question_set).delete()
+
+        for line_number, row in enumerate(reader, start=2):
+            question_text = str(row.get("question") or "").strip()
+            options = []
+            for option_idx in range(1, MAX_TRIVIA_CHOICES + 1):
+                option_value = str(row.get(f"option_{option_idx}") or "").strip()
+                if option_value:
+                    options.append(option_value)
+
+            if not question_text or len(options) < 2:
+                errors.append({"line": line_number, "error": "pregunta_u_opciones_invalidas"})
+                continue
+
+            correct_raw = str(row.get("correct_option") or "").strip()
+            correct_index = -1
+            if correct_raw.isdigit():
+                correct_index = int(correct_raw) - 1
+            else:
+                for idx, option_text in enumerate(options):
+                    if option_text.lower() == correct_raw.lower():
+                        correct_index = idx
+                        break
+
+            if correct_index < 0 or correct_index >= len(options):
+                errors.append({"line": line_number, "error": "correct_option_invalido"})
+                continue
+
+            question = Question.objects.create(
+                question_set=question_set,
+                text=question_text,
+                is_active=True,
+            )
+            Choice.objects.bulk_create(
+                [
+                    Choice(
+                        question=question,
+                        text=option_text,
+                        is_correct=(idx == correct_index),
+                    )
+                    for idx, option_text in enumerate(options)
+                ]
+            )
+            imported += 1
+
+    questions = (
+        Question.objects
+        .filter(question_set=question_set, is_active=True)
+        .prefetch_related("choices")
+        .order_by("id")
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "contract_id": contrato.id,
+            "question_set_id": question_set.id,
+            "imported": imported,
+            "errors": errors[:20],
+            "questions": [_serialize_trivia_question(q) for q in questions],
         },
         status=200,
     )
@@ -681,6 +1095,8 @@ def _serializar_contrato(c: ContratoJuego):
         "estado": c.estado,
         "creado_en": c.creado_en.isoformat() if c.creado_en else None,
         "customization_updated_at": customization.actualizado_en.isoformat() if customization else None,
+        "trivia_question_set_id": c.trivia_question_set_id,
+        "has_trivia_questions": bool(c.trivia_question_set_id),
     }
 
 
@@ -795,7 +1211,7 @@ def iniciar_juego(request, slug: str):
     hoy = timezone.localdate()
     contrato_activo = (
         ContratoJuego.objects
-        .select_related("customization")
+        .select_related("customization", "trivia_question_set")
         .filter(
             usuario=request.user,
             juego=juego,
@@ -842,7 +1258,10 @@ def iniciar_juego(request, slug: str):
         question_set = None
         # EL 1: si es trivia, seteamos question_set en la sesión
         if juego.slug == "trivia":
-            question_set = pick_question_set_for_session(user=request.user, juego=juego)
+            if contrato_activo:
+                question_set = _get_contract_trivia_question_set_for_play(contrato_activo)
+            if not question_set:
+                question_set = pick_question_set_for_session(user=request.user, juego=juego)
             if not question_set:
                 return JsonResponse(
                     {"error": "sesion_sin_question_set"},

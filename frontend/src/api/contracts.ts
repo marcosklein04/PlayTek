@@ -17,6 +17,8 @@ export type ContractGame = {
   estado: string;
   creado_en: string;
   customization_updated_at?: string | null;
+  trivia_question_set_id?: number | null;
+  has_trivia_questions?: boolean;
 };
 
 export type CreateContractResponse = {
@@ -93,6 +95,26 @@ export type ContractAssetKey =
   | "background"
   | "container_background";
 
+export type ContractTriviaChoice = {
+  id: number;
+  text: string;
+  is_correct: boolean;
+};
+
+export type ContractTriviaQuestion = {
+  id: number;
+  text: string;
+  is_active: boolean;
+  choices: ContractTriviaChoice[];
+};
+
+export type ContractTriviaQuestionsResponse = {
+  ok: boolean;
+  contract_id: number;
+  question_set_id: number | null;
+  questions: ContractTriviaQuestion[];
+};
+
 export async function fetchMyContracts() {
   return apiFetch<{ resultados: ContractGame[] }>("/api/contracts/mine", {
     method: "GET",
@@ -124,6 +146,67 @@ export async function uploadContractAsset(contractId: number, assetKey: Contract
 export async function deleteContractAsset(contractId: number, assetKey: ContractAssetKey) {
   return apiFetch<ContractCustomizationResponse>(`/api/contracts/${contractId}/assets/${assetKey}`, {
     method: "DELETE",
+  });
+}
+
+export type UpsertTriviaQuestionPayload = {
+  text: string;
+  choices: Array<{
+    text: string;
+    is_correct: boolean;
+  }>;
+};
+
+export async function fetchContractTriviaQuestions(contractId: number) {
+  return apiFetch<ContractTriviaQuestionsResponse>(`/api/contracts/${contractId}/trivia/questions`, {
+    method: "GET",
+  });
+}
+
+export async function createContractTriviaQuestion(contractId: number, payload: UpsertTriviaQuestionPayload) {
+  return apiFetch<{ ok: boolean; contract_id: number; question_set_id: number; question: ContractTriviaQuestion }>(
+    `/api/contracts/${contractId}/trivia/questions`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function updateContractTriviaQuestion(
+  contractId: number,
+  questionId: number,
+  payload: UpsertTriviaQuestionPayload,
+) {
+  return apiFetch<{ ok: boolean; contract_id: number; question_set_id: number; question: ContractTriviaQuestion }>(
+    `/api/contracts/${contractId}/trivia/questions/${questionId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function deleteContractTriviaQuestion(contractId: number, questionId: number) {
+  return apiFetch<{ ok: boolean; question_id: number }>(`/api/contracts/${contractId}/trivia/questions/${questionId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function importContractTriviaCsv(contractId: number, file: File, replace = false) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("replace", String(replace));
+  return apiFetch<{
+    ok: boolean;
+    contract_id: number;
+    question_set_id: number;
+    imported: number;
+    errors: Array<{ line: number; error: string }>;
+    questions: ContractTriviaQuestion[];
+  }>(`/api/contracts/${contractId}/trivia/questions/import-csv`, {
+    method: "POST",
+    body,
   });
 }
 

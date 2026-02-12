@@ -7,14 +7,53 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   ContractAssetKey,
+  ContractTriviaQuestion,
   TriviaCustomization,
+  createContractTriviaQuestion,
+  deleteContractTriviaQuestion,
   deleteContractAsset,
   fetchContractCustomization,
+  fetchContractTriviaQuestions,
+  importContractTriviaCsv,
   launchContractByDate,
   saveContractCustomization,
   startContractPreview,
+  updateContractTriviaQuestion,
   uploadContractAsset,
 } from "@/api/contracts";
+
+type TriviaQuestionForm = {
+  text: string;
+  choices: Array<{ text: string; is_correct: boolean }>;
+};
+
+const MAX_FORM_CHOICES = 6;
+
+function buildEmptyQuestionForm(): TriviaQuestionForm {
+  return {
+    text: "",
+    choices: [
+      { text: "", is_correct: true },
+      { text: "", is_correct: false },
+      { text: "", is_correct: false },
+      { text: "", is_correct: false },
+    ],
+  };
+}
+
+function questionToForm(question: ContractTriviaQuestion): TriviaQuestionForm {
+  const choices = question.choices.map((choice) => ({
+    text: choice.text,
+    is_correct: choice.is_correct,
+  }));
+  while (choices.length < 4) {
+    choices.push({ text: "", is_correct: false });
+  }
+  return {
+    text: question.text,
+    choices,
+  };
+}
 
 export default function ContractCustomization() {
   const { id } = useParams<{ id: string }>();
@@ -29,10 +68,19 @@ export default function ContractCustomization() {
   const [uploadingAsset, setUploadingAsset] = useState<ContractAssetKey | null>(null);
   const [gameSlug, setGameSlug] = useState("");
   const [config, setConfig] = useState<TriviaCustomization | null>(null);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsSaving, setQuestionsSaving] = useState(false);
+  const [questions, setQuestions] = useState<ContractTriviaQuestion[]>([]);
+  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
+  const [questionSetId, setQuestionSetId] = useState<number | null>(null);
+  const [questionForm, setQuestionForm] = useState<TriviaQuestionForm>(buildEmptyQuestionForm());
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvReplaceExisting, setCsvReplaceExisting] = useState(false);
+  const [csvUploading, setCsvUploading] = useState(false);
 
   const disabled = useMemo(
-    () => !config || saving || starting || uploadingAsset !== null,
-    [config, saving, starting, uploadingAsset],
+    () => !config || saving || starting || uploadingAsset !== null || questionsSaving || csvUploading,
+    [config, saving, starting, uploadingAsset, questionsSaving, csvUploading],
   );
   const watermarkOpacityLabel = useMemo(() => {
     if (!config) return "0.00";
@@ -62,6 +110,24 @@ export default function ContractCustomization() {
     })();
   }, [contractId, validId, navigate, toast]);
 
+  useEffect(() => {
+    if (!validId || gameSlug !== "trivia") return;
+
+    (async () => {
+      try {
+        setQuestionsLoading(true);
+        const res = await fetchContractTriviaQuestions(contractId);
+        setQuestions(res.questions || []);
+        setQuestionSetId(res.question_set_id ?? null);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudieron cargar las preguntas";
+        toast({ title: "Error", description: message, variant: "destructive" });
+      } finally {
+        setQuestionsLoading(false);
+      }
+    })();
+  }, [contractId, validId, gameSlug, toast]);
+
   const updateField = (path: string[], value: string | number | boolean) => {
     setConfig((prev) => {
       if (!prev) return prev;
@@ -72,6 +138,49 @@ export default function ContractCustomization() {
       }
       cursor[path[path.length - 1]] = value;
       return next;
+    });
+  };
+
+  const updateQuestionChoice = (choiceIndex: number, value: string) => {
+    setQuestionForm((prev) => {
+      const next = structuredClone(prev);
+      next.choices[choiceIndex].text = value;
+      return next;
+    });
+  };
+
+  const setCorrectChoice = (choiceIndex: number) => {
+    setQuestionForm((prev) => {
+      const next = structuredClone(prev);
+      next.choices = next.choices.map((choice, index) => ({
+        ...choice,
+        is_correct: index === choiceIndex,
+      }));
+      return next;
+    });
+  };
+
+  const addChoiceField = () => {
+    setQuestionForm((prev) => {
+      if (prev.choices.length >= MAX_FORM_CHOICES) return prev;
+      return {
+        ...prev,
+        choices: [...prev.choices, { text: "", is_correct: false }],
+      };
+    });
+  };
+
+  const removeChoiceField = (choiceIndex: number) => {
+    setQuestionForm((prev) => {
+      if (prev.choices.length <= 2) return prev;
+      const nextChoices = prev.choices.filter((_, index) => index !== choiceIndex);
+      if (!nextChoices.some((choice) => choice.is_correct)) {
+        nextChoices[0].is_correct = true;
+      }
+      return {
+        ...prev,
+        choices: nextChoices,
+      };
     });
   };
 
@@ -86,6 +195,115 @@ export default function ContractCustomization() {
       toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveQuestion = async () => {
+    if (!validId) return;
+
+    const text = questionForm.text.trim();
+    const choices = questionForm.choices
+      .map((choice) => ({ ...choice, text: choice.text.trim() }))
+      .filter((choice) => choice.text.length > 0);
+
+    if (!text) {
+      toast({ title: "Falta la pregunta", description: "Escribe el texto de la pregunta.", variant: "destructive" });
+      return;
+    }
+    if (choices.length < 2) {
+      toast({
+        title: "Opciones insuficientes",
+        description: "Debes cargar al menos 2 opciones con texto.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const correctCount = choices.filter((choice) => choice.is_correct).length;
+    if (correctCount !== 1) {
+      toast({
+        title: "Respuesta correcta",
+        description: "Marca exactamente una opcion correcta.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setQuestionsSaving(true);
+      if (editingQuestionId) {
+        const res = await updateContractTriviaQuestion(contractId, editingQuestionId, { text, choices });
+        setQuestions((prev) => prev.map((question) => (question.id === editingQuestionId ? res.question : question)));
+        toast({ title: "Pregunta actualizada", description: "Cambios guardados correctamente." });
+      } else {
+        const res = await createContractTriviaQuestion(contractId, { text, choices });
+        setQuestions((prev) => [...prev, res.question]);
+        setQuestionSetId(res.question_set_id);
+        toast({ title: "Pregunta creada", description: "Se agrego al contrato." });
+      }
+
+      setEditingQuestionId(null);
+      setQuestionForm(buildEmptyQuestionForm());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo guardar la pregunta";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setQuestionsSaving(false);
+    }
+  };
+
+  const handleEditQuestion = (question: ContractTriviaQuestion) => {
+    setEditingQuestionId(question.id);
+    setQuestionForm(questionToForm(question));
+  };
+
+  const handleCancelEditQuestion = () => {
+    setEditingQuestionId(null);
+    setQuestionForm(buildEmptyQuestionForm());
+  };
+
+  const handleDeleteQuestion = async (questionId: number) => {
+    if (!validId) return;
+    try {
+      setQuestionsSaving(true);
+      await deleteContractTriviaQuestion(contractId, questionId);
+      setQuestions((prev) => prev.filter((question) => question.id !== questionId));
+      if (editingQuestionId === questionId) {
+        handleCancelEditQuestion();
+      }
+      toast({ title: "Pregunta eliminada", description: "La pregunta fue removida del contrato." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar la pregunta";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setQuestionsSaving(false);
+    }
+  };
+
+  const handleImportCsv = async () => {
+    if (!validId || !csvFile) {
+      toast({
+        title: "Selecciona un archivo",
+        description: "Debes elegir un CSV antes de importar.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setCsvUploading(true);
+      const res = await importContractTriviaCsv(contractId, csvFile, csvReplaceExisting);
+      setQuestions(res.questions || []);
+      setQuestionSetId(res.question_set_id);
+      setCsvFile(null);
+      toast({
+        title: "CSV importado",
+        description: `Preguntas importadas: ${res.imported}. Errores: ${res.errors.length}.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo importar el CSV";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setCsvUploading(false);
     }
   };
 
@@ -351,6 +569,145 @@ export default function ContractCustomization() {
                 </div>
               </div>
             </section>
+
+            {gameSlug === "trivia" && (
+              <section className="glass-card p-5 space-y-5">
+                <div>
+                  <h2 className="text-lg font-semibold">Preguntas de Trivia</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Crea y edita las preguntas especificas de este contrato.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Question set: {questionSetId ?? "Se crea automaticamente al guardar la primera pregunta"}
+                  </p>
+                </div>
+
+                <div className="rounded-md border border-border p-4 space-y-3">
+                  <h3 className="text-sm font-semibold">Importar CSV</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Columnas requeridas: question, option_1, option_2, correct_option (indice 1-based o texto exacto).
+                  </p>
+                  <Input
+                    type="file"
+                    accept=".csv,text/csv"
+                    disabled={csvUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setCsvFile(file);
+                    }}
+                  />
+                  <div className="flex items-center justify-between rounded-md border border-border p-3">
+                    <span className="text-sm">Reemplazar preguntas actuales</span>
+                    <Switch
+                      checked={csvReplaceExisting}
+                      onCheckedChange={(checked) => setCsvReplaceExisting(checked)}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    disabled={csvUploading || !csvFile}
+                    onClick={() => void handleImportCsv()}
+                  >
+                    {csvUploading ? "Importando..." : "Importar CSV"}
+                  </Button>
+                </div>
+
+                <div className="rounded-md border border-border p-4 space-y-4">
+                  <h3 className="text-sm font-semibold">
+                    {editingQuestionId ? `Editar pregunta #${editingQuestionId}` : "Nueva pregunta"}
+                  </h3>
+
+                  <div>
+                    <label className="text-sm text-muted-foreground">Pregunta</label>
+                    <Input
+                      value={questionForm.text}
+                      onChange={(e) => setQuestionForm((prev) => ({ ...prev, text: e.target.value }))}
+                      placeholder="Escribe la pregunta..."
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Opciones (marca una correcta)</label>
+                    {questionForm.choices.map((choice, index) => (
+                      <div key={`choice-${index}`} className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="trivia-correct-choice"
+                          checked={choice.is_correct}
+                          onChange={() => setCorrectChoice(index)}
+                        />
+                        <Input
+                          value={choice.text}
+                          onChange={(e) => updateQuestionChoice(index, e.target.value)}
+                          placeholder={`Opcion ${index + 1}`}
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={questionForm.choices.length <= 2}
+                          onClick={() => removeChoiceField(index)}
+                        >
+                          Quitar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      disabled={questionForm.choices.length >= MAX_FORM_CHOICES}
+                      onClick={addChoiceField}
+                    >
+                      Agregar opcion
+                    </Button>
+                    <Button variant="hero" disabled={questionsSaving} onClick={() => void handleSaveQuestion()}>
+                      {questionsSaving ? "Guardando..." : editingQuestionId ? "Actualizar pregunta" : "Guardar pregunta"}
+                    </Button>
+                    {editingQuestionId && (
+                      <Button variant="outline" onClick={handleCancelEditQuestion}>
+                        Cancelar edicion
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Preguntas cargadas ({questions.length})</h3>
+                  {questionsLoading && <p className="text-sm text-muted-foreground">Cargando preguntas...</p>}
+                  {!questionsLoading && questions.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Aun no hay preguntas para este contrato.</p>
+                  )}
+                  {!questionsLoading &&
+                    questions.map((question) => (
+                      <div key={question.id} className="rounded-md border border-border p-4">
+                        <p className="font-medium text-foreground">{question.text}</p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {question.choices.map((choice) => (
+                            <li key={choice.id} className={choice.is_correct ? "text-primary font-medium" : "text-muted-foreground"}>
+                              {choice.is_correct ? "✓ " : "• "}
+                              {choice.text}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-3 flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => handleEditQuestion(question)}>
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={questionsSaving}
+                            onClick={() => void handleDeleteQuestion(question.id)}
+                          >
+                            Eliminar
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </section>
+            )}
 
             <section className="glass-card p-5">
               <h2 className="text-lg font-semibold mb-4">Textos</h2>

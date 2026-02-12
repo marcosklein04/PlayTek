@@ -130,6 +130,14 @@ class ContratoJuego(models.Model):
         related_name="contratos",
     )
 
+    trivia_question_set = models.ForeignKey(
+        "trivia.QuestionSet",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="contratos_juego",
+    )
+
     fecha_inicio = models.DateField()
     fecha_fin = models.DateField()
 

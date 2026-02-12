@@ -27,5 +27,8 @@ urlpatterns = [
     path("contracts/<int:contract_id>/launch", views.lanzar_juego_contrato),
     path("contracts/<int:contract_id>/customization", views.obtener_customizacion_contrato),
     path("contracts/<int:contract_id>/customization/save", views.guardar_customizacion_contrato),
+    path("contracts/<int:contract_id>/trivia/questions", views.contrato_trivia_questions),
+    path("contracts/<int:contract_id>/trivia/questions/import-csv", views.contrato_trivia_import_csv),
+    path("contracts/<int:contract_id>/trivia/questions/<int:question_id>", views.contrato_trivia_question_detalle),
     path("contracts/<int:contract_id>/assets/<str:asset_key>", views.gestionar_asset_contrato),
 ]
