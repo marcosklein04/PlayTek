@@ -5,14 +5,14 @@ import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import redirect
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
-from games_catalog.models import ContratoJuego
+from games_catalog.models import ContratoJuego, Game
 
 from api_auth.auth import token_required
 from .mp import create_preference
@@ -22,6 +22,30 @@ User = get_user_model()
 
 def _require_admin(user):
     return bool(user and user.is_superuser)
+
+
+def _company_name_for_user(user):
+    company = getattr(getattr(user, "profile", None), "company", None)
+    if not company:
+        return ""
+    return (
+        getattr(company, "name", None)
+        or getattr(company, "nombre", None)
+        or str(company)
+    )
+
+
+def _parse_positive_int(value):
+    if value is None:
+        return None
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
 
 @require_GET
 @token_required
@@ -137,6 +161,25 @@ def admin_super_overview(request):
 
     date_from = parse_date((request.GET.get("date_from") or "").strip())
     date_to = parse_date((request.GET.get("date_to") or "").strip())
+    event_date_from = parse_date((request.GET.get("event_date_from") or "").strip())
+    event_date_to = parse_date((request.GET.get("event_date_to") or "").strip())
+
+    client_id = _parse_positive_int(request.GET.get("client_id"))
+    game_slug = (request.GET.get("game_slug") or "").strip()
+    contract_status = (request.GET.get("contract_status") or "").strip()
+    transaction_kind = (request.GET.get("transaction_kind") or "").strip()
+    topup_status = (request.GET.get("topup_status") or "").strip()
+    search = (request.GET.get("q") or "").strip()
+
+    valid_contract_statuses = {choice[0] for choice in ContratoJuego.Estado.choices}
+    valid_transaction_kinds = {choice[0] for choice in LedgerEntry.Kind.choices}
+    valid_topup_statuses = {choice[0] for choice in WalletTopup.Status.choices}
+    if contract_status and contract_status not in valid_contract_statuses:
+        contract_status = ""
+    if transaction_kind and transaction_kind not in valid_transaction_kinds:
+        transaction_kind = ""
+    if topup_status and topup_status not in valid_topup_statuses:
+        topup_status = ""
 
     contracts_qs = (
         ContratoJuego.objects
@@ -154,6 +197,55 @@ def admin_super_overview(request):
         .select_related("user__profile__company", "pack")
         .order_by("-created_at")
     )
+    clients_qs = (
+        User.objects
+        .filter(is_superuser=False)
+        .select_related("profile__company")
+        .order_by("username")
+    )
+
+    if search:
+        search_filter = (
+            Q(username__icontains=search)
+            | Q(email__icontains=search)
+            | Q(profile__company__name__icontains=search)
+        )
+        clients_qs = clients_qs.filter(search_filter)
+        contracts_qs = contracts_qs.filter(
+            Q(usuario__username__icontains=search)
+            | Q(usuario__email__icontains=search)
+            | Q(usuario__profile__company__name__icontains=search)
+            | Q(juego__name__icontains=search)
+            | Q(juego__slug__icontains=search)
+        )
+        ledger_qs = ledger_qs.filter(
+            Q(user__username__icontains=search)
+            | Q(user__email__icontains=search)
+            | Q(user__profile__company__name__icontains=search)
+            | Q(reference_type__icontains=search)
+            | Q(reference_id__icontains=search)
+        )
+        topups_qs = topups_qs.filter(
+            Q(user__username__icontains=search)
+            | Q(user__email__icontains=search)
+            | Q(user__profile__company__name__icontains=search)
+            | Q(pack__name__icontains=search)
+        )
+
+    if client_id:
+        clients_qs = clients_qs.filter(id=client_id)
+        contracts_qs = contracts_qs.filter(usuario_id=client_id)
+        ledger_qs = ledger_qs.filter(user_id=client_id)
+        topups_qs = topups_qs.filter(user_id=client_id)
+
+    if game_slug:
+        contracts_qs = contracts_qs.filter(juego__slug=game_slug)
+    if contract_status:
+        contracts_qs = contracts_qs.filter(estado=contract_status)
+    if transaction_kind:
+        ledger_qs = ledger_qs.filter(kind=transaction_kind)
+    if topup_status:
+        topups_qs = topups_qs.filter(status=topup_status)
 
     if date_from:
         contracts_qs = contracts_qs.filter(creado_en__date__gte=date_from)
@@ -164,26 +256,38 @@ def admin_super_overview(request):
         ledger_qs = ledger_qs.filter(created_at__date__lte=date_to)
         topups_qs = topups_qs.filter(created_at__date__lte=date_to)
 
-    contracts = list(contracts_qs[:200])
-    ledger_entries = list(ledger_qs[:300])
-    topups = list(topups_qs[:200])
+    if event_date_from:
+        contracts_qs = contracts_qs.filter(
+            Q(fechas_evento__fecha__gte=event_date_from)
+            | Q(fechas_evento__isnull=True, fecha_fin__gte=event_date_from)
+        )
+    if event_date_to:
+        contracts_qs = contracts_qs.filter(
+            Q(fechas_evento__fecha__lte=event_date_to)
+            | Q(fechas_evento__isnull=True, fecha_inicio__lte=event_date_to)
+        )
 
-    clients_qs = (
-        User.objects
-        .filter(is_superuser=False)
-        .select_related("profile__company")
-        .order_by("username")
-    )
+    contracts_qs = contracts_qs.distinct()
+
+    contracts = list(contracts_qs[:250])
+    ledger_entries = list(ledger_qs[:300])
+    topups = list(topups_qs[:250])
+
+    wallet_balances = {
+        row["user_id"]: row["balance"]
+        for row in Wallet.objects.filter(user_id__in=clients_qs.values_list("id", flat=True)).values("user_id", "balance")
+    }
+
     clients = []
     for user in clients_qs:
-        company = getattr(getattr(user, "profile", None), "company", None)
         clients.append(
             {
                 "user_id": user.id,
                 "username": user.username,
                 "email": user.email or "",
-                "company": company.name if company else "",
+                "company": _company_name_for_user(user),
                 "joined_at": user.date_joined.isoformat() if user.date_joined else None,
+                "wallet_balance": wallet_balances.get(user.id, 0),
             }
         )
 
@@ -199,6 +303,35 @@ def admin_super_overview(request):
             "filters": {
                 "date_from": date_from.isoformat() if date_from else None,
                 "date_to": date_to.isoformat() if date_to else None,
+                "event_date_from": event_date_from.isoformat() if event_date_from else None,
+                "event_date_to": event_date_to.isoformat() if event_date_to else None,
+                "client_id": client_id,
+                "game_slug": game_slug or None,
+                "contract_status": contract_status or None,
+                "transaction_kind": transaction_kind or None,
+                "topup_status": topup_status or None,
+                "q": search or None,
+            },
+            "options": {
+                "games": [
+                    {
+                        "slug": game.slug,
+                        "name": game.name,
+                    }
+                    for game in Game.objects.filter(is_enabled=True).order_by("name")
+                ],
+                "contract_statuses": [
+                    {"value": value, "label": label}
+                    for value, label in ContratoJuego.Estado.choices
+                ],
+                "transaction_kinds": [
+                    {"value": value, "label": label}
+                    for value, label in LedgerEntry.Kind.choices
+                ],
+                "topup_statuses": [
+                    {"value": value, "label": label}
+                    for value, label in WalletTopup.Status.choices
+                ],
             },
             "clients": clients,
             "contracts": [
@@ -214,6 +347,7 @@ def admin_super_overview(request):
                     "fecha_fin": c.fecha_fin.isoformat(),
                     "fechas_evento": [f.fecha.isoformat() for f in c.fechas_evento.all()],
                     "estado": c.estado,
+                    "costo_por_partida": c.juego.cost_per_play,
                     "creado_en": c.creado_en.isoformat() if c.creado_en else None,
                 }
                 for c in contracts
@@ -227,9 +361,7 @@ def admin_super_overview(request):
                     "reference_type": item.reference_type,
                     "reference_id": item.reference_id,
                     "username": item.user.username,
-                    "company": getattr(getattr(item.user, "profile", None), "company", None).name
-                    if getattr(getattr(item.user, "profile", None), "company", None)
-                    else "",
+                    "company": _company_name_for_user(item.user),
                     "created_at": item.created_at.isoformat() if item.created_at else None,
                 }
                 for item in ledger_entries
@@ -237,10 +369,9 @@ def admin_super_overview(request):
             "topups": [
                 {
                     "id": t.id,
+                    "pack_id": t.pack_id,
                     "username": t.user.username,
-                    "company": getattr(getattr(t.user, "profile", None), "company", None).name
-                    if getattr(getattr(t.user, "profile", None), "company", None)
-                    else "",
+                    "company": _company_name_for_user(t.user),
                     "status": t.status,
                     "credits": t.credits,
                     "amount_ars": str(t.amount_ars),
