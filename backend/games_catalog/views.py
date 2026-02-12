@@ -426,6 +426,18 @@ def _contract_is_available_on_date(contrato: ContratoJuego, target_date: date) -
     return contrato.fecha_inicio <= target_date <= contrato.fecha_fin
 
 
+def _finalize_expired_contracts_for_user(user, today: date):
+    # Si el último día contratado ya pasó, ese contrato deja de estar operativo.
+    ContratoJuego.objects.filter(
+        usuario=user,
+        estado=ContratoJuego.Estado.ACTIVO,
+        fecha_fin__lt=today,
+    ).update(
+        estado=ContratoJuego.Estado.FINALIZADO,
+        actualizado_en=timezone.now(),
+    )
+
+
 def _get_user_contract_or_404(request, contract_id: int):
     return get_object_or_404(
         ContratoJuego.objects.select_related("juego", "customization", "trivia_question_set").prefetch_related("fechas_evento"),
@@ -671,9 +683,16 @@ def crear_contrato_juego(request):
 @require_GET
 @token_required
 def mis_contratos(request):
+    today = timezone.localdate()
+    _finalize_expired_contracts_for_user(request.user, today)
+
     qs = (
         ContratoJuego.objects
-        .filter(usuario=request.user)
+        .filter(
+            usuario=request.user,
+            estado__in=[ContratoJuego.Estado.ACTIVO, ContratoJuego.Estado.BORRADOR],
+            fecha_fin__gte=today,
+        )
         .select_related("juego", "customization", "trivia_question_set")
         .prefetch_related("fechas_evento")
         .order_by("-creado_en")

@@ -139,3 +139,33 @@ class GamesCatalogContractDatesTests(TestCase):
             launch_tomorrow = self._post_json(f"/api/contracts/{contrato_id}/launch", {})
         self.assertEqual(launch_tomorrow.status_code, 201)
         self.assertTrue(launch_tomorrow.json()["preview_mode"])
+
+    def test_my_contracts_hides_expired_contracts_and_marks_them_finished(self):
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        expired_contract = ContratoJuego.objects.create(
+            usuario=self.user,
+            juego=self.game,
+            fecha_inicio=yesterday,
+            fecha_fin=yesterday,
+            estado=ContratoJuego.Estado.ACTIVO,
+        )
+        active_contract = ContratoJuego.objects.create(
+            usuario=self.user,
+            juego=self.game,
+            fecha_inicio=today,
+            fecha_fin=today + timedelta(days=1),
+            estado=ContratoJuego.Estado.ACTIVO,
+        )
+
+        response = self.client.get("/api/contracts/mine", **self.auth)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["resultados"]
+        ids = {item["id"] for item in payload}
+
+        self.assertIn(active_contract.id, ids)
+        self.assertNotIn(expired_contract.id, ids)
+
+        expired_contract.refresh_from_db()
+        self.assertEqual(expired_contract.estado, ContratoJuego.Estado.FINALIZADO)
