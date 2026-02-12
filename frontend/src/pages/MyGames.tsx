@@ -110,15 +110,26 @@ export default function MyGames() {
                 contracts.map((contract) => (
                   <div key={contract.id} className="glass-card p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-foreground">{contract.juego.nombre}</h3>
-                        <Badge variant="secondary">{estadoContratoLabel(contract.estado)}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {contract.fecha_inicio === contract.fecha_fin
-                          ? `Fecha del evento: ${contract.fecha_inicio}`
-                          : `${contract.fecha_inicio} hasta ${contract.fecha_fin}`}
-                      </p>
+                      {(() => {
+                        const fechasEvento = (contract.fechas_evento || []).slice().sort();
+                        const fechasLabel =
+                          fechasEvento.length > 0
+                            ? fechasEvento.length === 1
+                              ? `Fecha del evento: ${fechasEvento[0]}`
+                              : `Fechas del evento: ${fechasEvento.join(" · ")}`
+                            : contract.fecha_inicio === contract.fecha_fin
+                              ? `Fecha del evento: ${contract.fecha_inicio}`
+                              : `${contract.fecha_inicio} hasta ${contract.fecha_fin}`;
+                        return (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-lg font-semibold text-foreground">{contract.juego.nombre}</h3>
+                              <Badge variant="secondary">{estadoContratoLabel(contract.estado)}</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1">{fechasLabel}</p>
+                          </>
+                        );
+                      })()}
                       <p className="text-xs text-muted-foreground mt-1">
                         Ultima customizacion: {contract.customization_updated_at || "Sin customizar"}
                       </p>

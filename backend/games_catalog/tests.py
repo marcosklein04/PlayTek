@@ -1,12 +1,18 @@
+import json
+from datetime import timedelta
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 
 from accounts.models import Company
-from games_catalog.models import Game, GameSession
+from api_auth.models import ApiToken
+from games_catalog.models import ContratoJuego, Game, GameSession
 from games_catalog.views import _build_runner_url, _pick_question_set_for_preview
 from trivia.models import Choice, Question, QuestionSet
+from wallet.models import Wallet
 
 
 class GamesCatalogTriviaTests(TestCase):
@@ -70,3 +76,66 @@ class GamesCatalogTriviaTests(TestCase):
         self.assertIn("user_id", query)
         self.assertNotIn("session_token", query)
         self.assertEqual(fragment.get("session_token"), ["token-xyz"])
+
+
+class GamesCatalogContractDatesTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(username="contract_user", password="secret123")
+        self.token = ApiToken.objects.create(user=self.user, key=ApiToken.generate_key())
+
+        self.game = Game.objects.create(
+            slug="bingo",
+            name="Bingo",
+            runner_url="/runner/bingo",
+            cost_per_play=2,
+            is_enabled=True,
+        )
+        Wallet.objects.create(user=self.user, balance=20)
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {self.token.key}"}
+
+    def _post_json(self, path: str, payload: dict):
+        return self.client.post(path, data=json.dumps(payload), content_type="application/json", **self.auth)
+
+    def test_contract_rejects_past_date(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        response = self._post_json(
+            "/api/contracts",
+            {"slug": self.game.slug, "fechas_evento": [yesterday.isoformat()]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "fecha_pasada_no_permitida")
+
+    def test_contract_accepts_multiple_dates_and_launch_respects_exact_days(self):
+        today = timezone.localdate()
+        in_two_days = today + timedelta(days=2)
+        tomorrow = today + timedelta(days=1)
+
+        create_response = self._post_json(
+            "/api/contracts",
+            {
+                "slug": self.game.slug,
+                "fechas_evento": [today.isoformat(), in_two_days.isoformat()],
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contrato_id = create_response.json()["contrato"]["id"]
+
+        contrato = ContratoJuego.objects.get(id=contrato_id)
+        self.assertEqual(
+            list(contrato.fechas_evento.values_list("fecha", flat=True)),
+            [today, in_two_days],
+        )
+
+        wallet = Wallet.objects.get(user=self.user)
+        self.assertEqual(wallet.balance, 16)
+
+        launch_today = self._post_json(f"/api/contracts/{contrato_id}/launch", {})
+        self.assertEqual(launch_today.status_code, 201)
+        self.assertFalse(launch_today.json()["preview_mode"])
+
+        with patch("games_catalog.views.timezone.localdate", return_value=tomorrow):
+            launch_tomorrow = self._post_json(f"/api/contracts/{contrato_id}/launch", {})
+        self.assertEqual(launch_tomorrow.status_code, 201)
+        self.assertTrue(launch_tomorrow.json()["preview_mode"])

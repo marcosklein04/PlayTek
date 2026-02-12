@@ -1,6 +1,7 @@
 import json
 import random
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.http import require_GET, require_POST
@@ -48,7 +49,12 @@ def _session_customization(sesion):
 
 @require_GET
 def trivia_runner_page(request):
-    return render(request, "runner/trivia/index.html")
+    frontend_base_url = str(getattr(settings, "FRONTEND_BASE_URL", "") or "").strip()
+    return render(
+        request,
+        "runner/trivia/index.html",
+        {"frontend_base_url": frontend_base_url},
+    )
 
 
 @require_GET

@@ -2,6 +2,7 @@ import { apiFetch } from "@/api/client";
 
 type CreateContractPayload = {
   slug: string;
+  fechas_evento?: string[];
   fecha_inicio?: string;
   fecha_fin?: string;
   fecha_evento?: string;
@@ -15,6 +16,7 @@ export type ContractGame = {
   };
   fecha_inicio: string;
   fecha_fin: string;
+  fechas_evento?: string[];
   estado: string;
   creado_en: string;
   customization_updated_at?: string | null;
@@ -29,6 +31,7 @@ export type CreateContractResponse = {
     game_slug: string;
     fecha_inicio: string;
     fecha_fin: string;
+    fechas_evento?: string[];
     estado: string;
     costo_total: number;
   };

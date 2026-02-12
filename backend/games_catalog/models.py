@@ -162,6 +162,31 @@ class ContratoJuego(models.Model):
         return f"{self.usuario.username} - {self.juego.slug} ({self.fecha_inicio} → {self.fecha_fin})"
 
 
+class ContratoJuegoFecha(models.Model):
+    contrato = models.ForeignKey(
+        ContratoJuego,
+        on_delete=models.CASCADE,
+        related_name="fechas_evento",
+    )
+    fecha = models.DateField()
+
+    class Meta:
+        db_table = "games_catalog_contratojuegofecha"
+        ordering = ["fecha"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contrato", "fecha"],
+                name="games_catalog_unique_contract_event_date",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["fecha"]),
+        ]
+
+    def __str__(self):
+        return f"Contrato #{self.contrato_id} - {self.fecha}"
+
+
 class GameCustomization(models.Model):
     contrato = models.OneToOneField(
         ContratoJuego,

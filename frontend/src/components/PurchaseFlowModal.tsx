@@ -17,14 +17,32 @@ type Props = {
 export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
   const { toast } = useToast();
   const [step, setStep] = useState<"dates" | "confirm" | "loading" | "success">("dates");
-  const [eventDate, setEventDate] = useState("");
+  const [eventDates, setEventDates] = useState<string[]>([""]);
   const [result, setResult] = useState<{ saldo_restante: number } | null>(null);
 
-  const canContinue = useMemo(() => !!eventDate, [eventDate]);
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const normalizedDates = useMemo(
+    () => eventDates.map((value) => value.trim()).filter(Boolean),
+    [eventDates],
+  );
+  const uniqueDates = useMemo(
+    () => Array.from(new Set(normalizedDates)).sort(),
+    [normalizedDates],
+  );
+  const hasDuplicates = normalizedDates.length !== uniqueDates.length;
+  const hasPastDates = uniqueDates.some((value) => value < todayIso);
+  const canContinue = uniqueDates.length > 0 && !hasPastDates;
 
   const reset = () => {
     setStep("dates");
-    setEventDate("");
+    setEventDates([""]);
     setResult(null);
   };
 
@@ -39,9 +57,7 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
       setStep("loading");
       const response = await createGameContract({
         slug: game.id,
-        fecha_evento: eventDate,
-        fecha_inicio: eventDate,
-        fecha_fin: eventDate,
+        fechas_evento: uniqueDates,
       });
       setResult({ saldo_restante: response.saldo_restante });
       setStep("success");
@@ -67,6 +83,25 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
     }
   };
 
+  const updateDateAt = (index: number, value: string) => {
+    setEventDates((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
+
+  const addDateField = () => {
+    setEventDates((prev) => [...prev, ""]);
+  };
+
+  const removeDateField = (index: number) => {
+    setEventDates((prev) => {
+      if (prev.length <= 1) return [""];
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => (!v ? closeAll() : null)}>
       <DialogContent className="max-w-lg">
@@ -77,15 +112,53 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
         {step === "dates" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Elegí la fecha exacta en la que se va a jugar en el evento.
+              Elegí una o más fechas exactas en las que se va a jugar en el evento.
             </p>
 
-            <div className="grid grid-cols-1 gap-3">
-              <div className="space-y-2">
-                <label className="text-sm">Fecha del evento</label>
-                <Input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
-              </div>
+            <div className="space-y-3">
+              {eventDates.map((eventDate, index) => (
+                <div className="space-y-2" key={`event-date-${index}`}>
+                  <label className="text-sm">
+                    Fecha del evento {eventDates.length > 1 ? `#${index + 1}` : ""}
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="date"
+                      min={todayIso}
+                      value={eventDate}
+                      onChange={(e) => updateDateAt(index, e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => removeDateField(index)}
+                      disabled={eventDates.length === 1}
+                    >
+                      Quitar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <Button type="button" variant="glass" onClick={addDateField}>
+                Agregar otra fecha
+              </Button>
             </div>
+
+            {hasDuplicates && (
+              <p className="text-xs text-amber-300">
+                Fechas repetidas: se van a tomar una sola vez.
+              </p>
+            )}
+            {hasPastDates && (
+              <p className="text-xs text-red-400">
+                No se permiten fechas pasadas.
+              </p>
+            )}
+            {uniqueDates.length > 0 && (
+              <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                Fechas seleccionadas: {uniqueDates.join(" · ")}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={closeAll}>
@@ -100,7 +173,12 @@ export function PurchaseFlowModal({ game, open, onClose, onPurchased }: Props) {
 
         {step === "confirm" && (
           <div className="space-y-4">
-            <p className="text-sm">Vas a contratar <b>{game?.name}</b> para el día <b>{eventDate}</b>.</p>
+            <p className="text-sm">
+              Vas a contratar <b>{game?.name}</b> para {uniqueDates.length} fecha{uniqueDates.length === 1 ? "" : "s"}:
+            </p>
+            <div className="rounded-md border p-3 text-sm">
+              {uniqueDates.join(" · ")}
+            </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setStep("dates")}>
                 Atrás

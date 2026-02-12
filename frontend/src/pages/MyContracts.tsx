@@ -93,14 +93,23 @@ export default function MyContracts() {
         {!loading && contracts.length > 0 && (
           <div className="space-y-4">
             {contracts.map((contract) => (
-              <div key={contract.id} className="glass-card p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div
+                key={contract.id}
+                className="glass-card p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+              >
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-semibold text-foreground">{contract.juego.nombre}</h2>
                     <Badge variant="secondary">{estadoLabel(contract.estado)}</Badge>
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {contract.fecha_inicio} hasta {contract.fecha_fin}
+                    {(() => {
+                      const fechasEvento = (contract.fechas_evento || []).slice().sort();
+                      if (fechasEvento.length === 1) return `Fecha del evento: ${fechasEvento[0]}`;
+                      if (fechasEvento.length > 1) return `Fechas del evento: ${fechasEvento.join(" · ")}`;
+                      if (contract.fecha_inicio === contract.fecha_fin) return `Fecha del evento: ${contract.fecha_inicio}`;
+                      return `${contract.fecha_inicio} hasta ${contract.fecha_fin}`;
+                    })()}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Ultima customizacion: {contract.customization_updated_at || "Sin customizar"}

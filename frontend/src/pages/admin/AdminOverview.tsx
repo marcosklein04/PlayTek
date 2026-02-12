@@ -121,9 +121,13 @@ export default function AdminOverview() {
                         <td className="py-2 pr-3">{contract.client_company || "—"}</td>
                         <td className="py-2 pr-3">{contract.game_name}</td>
                         <td className="py-2 pr-3">
-                          {contract.fecha_inicio === contract.fecha_fin
-                            ? contract.fecha_inicio
-                            : `${contract.fecha_inicio} → ${contract.fecha_fin}`}
+                          {(() => {
+                            const fechasEvento = (contract.fechas_evento || []).slice().sort();
+                            if (fechasEvento.length === 1) return fechasEvento[0];
+                            if (fechasEvento.length > 1) return fechasEvento.join(" · ");
+                            if (contract.fecha_inicio === contract.fecha_fin) return contract.fecha_inicio;
+                            return `${contract.fecha_inicio} → ${contract.fecha_fin}`;
+                          })()}
                         </td>
                         <td className="py-2 pr-3">{contract.estado}</td>
                       </tr>

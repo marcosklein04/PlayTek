@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Tag, Game, GameSession, ContratoJuego, GameCustomization
+from .models import Tag, Game, GameSession, ContratoJuego, ContratoJuegoFecha, GameCustomization
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
@@ -31,3 +31,10 @@ class GameCustomizationAdmin(admin.ModelAdmin):
     list_display = ("id", "contrato", "actualizado_en")
     search_fields = ("contrato__usuario__username", "contrato__juego__slug")
     readonly_fields = ("creado_en", "actualizado_en")
+
+
+@admin.register(ContratoJuegoFecha)
+class ContratoJuegoFechaAdmin(admin.ModelAdmin):
+    list_display = ("id", "contrato", "fecha")
+    search_fields = ("contrato__usuario__username", "contrato__juego__slug")
+    list_filter = ("fecha",)

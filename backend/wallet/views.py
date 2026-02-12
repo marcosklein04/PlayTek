@@ -141,6 +141,7 @@ def admin_super_overview(request):
     contracts_qs = (
         ContratoJuego.objects
         .select_related("usuario__profile__company", "juego")
+        .prefetch_related("fechas_evento")
         .order_by("-creado_en")
     )
     ledger_qs = (
@@ -211,6 +212,7 @@ def admin_super_overview(request):
                     "game_name": c.juego.name,
                     "fecha_inicio": c.fecha_inicio.isoformat(),
                     "fecha_fin": c.fecha_fin.isoformat(),
+                    "fechas_evento": [f.fecha.isoformat() for f in c.fechas_evento.all()],
                     "estado": c.estado,
                     "creado_en": c.creado_en.isoformat() if c.creado_en else None,
                 }

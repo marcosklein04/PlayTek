@@ -13,8 +13,11 @@ import { Game } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { mapApiGameToGame } from "@/mappers/gameMapper";
 import { PurchaseFlowModal } from "@/components/PurchaseFlowModal";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export default function Catalog() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -41,6 +44,30 @@ export default function Catalog() {
     })();
   }, [toast]);
 
+  useEffect(() => {
+    if (!games.length) return;
+
+    const params = new URLSearchParams(location.search);
+    const openGame = (params.get("open_game") || "").trim();
+    if (!openGame) return;
+
+    const gameToOpen = games.find((game) => game.id === openGame);
+    if (!gameToOpen) return;
+
+    setSelectedGame(gameToOpen);
+    setContractGame(null);
+
+    params.delete("open_game");
+    const nextSearch = params.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : "",
+      },
+      { replace: true },
+    );
+  }, [games, location.pathname, location.search, navigate]);
+
   const filteredGames = useMemo(() => {
     return games.filter((game) => {
       const matchesSearch =
@@ -63,11 +90,17 @@ export default function Catalog() {
   const handlePreviewGame = async (gameId: string) => {
     try {
       const res = await previewGame(gameId);
+
+      const runnerUrl = new URL(res.juego.runner_url, window.location.origin);
+      const returnTo = new URL("/catalog", window.location.origin);
+      returnTo.searchParams.set("open_game", gameId);
+      runnerUrl.searchParams.set("return_to", returnTo.toString());
+
       toast({
         title: "Modo prueba",
         description: "Abrimos el juego en preview con marca de agua.",
       });
-      window.location.href = res.juego.runner_url;
+      window.location.href = runnerUrl.toString();
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo abrir el preview";
       toast({ title: "Error", description: message, variant: "destructive" });

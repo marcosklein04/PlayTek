@@ -10,7 +10,7 @@ const BASE_CUSTOMIZATION = {
   texts: {
     welcome_title: "Trivia Runner",
     welcome_subtitle: "",
-    cta_button: "Siguiente",
+    cta_button: "Comenzar",
   },
   rules: {
     show_timer: true,
@@ -41,8 +41,10 @@ const BASE_CUSTOMIZATION = {
 
 let runtimeRules = { ...BASE_CUSTOMIZATION.rules };
 let runtimeVisual = { ...BASE_CUSTOMIZATION.visual };
+let startButtonLabel = BASE_CUSTOMIZATION.texts.cta_button;
 let timerIntervalId = null;
 let timerRemaining = 0;
+let returnTimeoutId = null;
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -134,6 +136,53 @@ function stopTimer() {
   }
 }
 
+function collectAllowedReturnOrigins() {
+  const origins = new Set([window.location.origin]);
+
+  const configuredFrontendBase =
+    window.RUNNER_CONFIG &&
+    typeof window.RUNNER_CONFIG.frontendBaseUrl === "string"
+      ? window.RUNNER_CONFIG.frontendBaseUrl.trim()
+      : "";
+
+  if (configuredFrontendBase) {
+    try {
+      origins.add(new URL(configuredFrontendBase, window.location.origin).origin);
+    } catch (_error) {
+      // ignorar config inválida
+    }
+  }
+
+  return origins;
+}
+
+function parseReturnToUrl() {
+  try {
+    const raw = new URLSearchParams(window.location.search).get("return_to");
+    if (!raw) return "";
+    const target = new URL(raw, window.location.origin);
+    const allowedOrigins = collectAllowedReturnOrigins();
+    if (!allowedOrigins.has(target.origin)) return "";
+    return target.toString();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function redirectToReturnTarget() {
+  const target = parseReturnToUrl();
+  if (!target) return;
+
+  if (returnTimeoutId) {
+    clearTimeout(returnTimeoutId);
+  }
+
+  setText("status", "Juego terminado. Volviendo al catalogo...");
+  returnTimeoutId = setTimeout(() => {
+    window.location.href = target;
+  }, 1200);
+}
+
 function updateTimerLabel() {
   const timerEl = document.getElementById("timer");
   if (!timerEl) return;
@@ -176,6 +225,27 @@ function startTimer() {
       setText("status", "Tiempo agotado. Responde o presiona siguiente.");
     }
   }, 1000);
+}
+
+function setQuestionAreaVisible(visible) {
+  const questionBoxEl = document.getElementById("questionBox");
+  if (!questionBoxEl) return;
+  questionBoxEl.classList.toggle("hidden", !visible);
+}
+
+function resetWelcomeState() {
+  stopTimer();
+  setQuestionAreaVisible(false);
+  setText("status", "Presiona el boton para comenzar.");
+  setText("questionText", "");
+  const choicesEl = document.getElementById("choices");
+  if (choicesEl) choicesEl.innerHTML = "";
+  const timerEl = document.getElementById("timer");
+  if (timerEl) {
+    timerEl.classList.add("hidden");
+    timerEl.classList.remove("timer-expired");
+    timerEl.textContent = "";
+  }
 }
 
 function applyCustomization(customization, previewMode) {
@@ -252,7 +322,7 @@ function applyCustomization(customization, previewMode) {
 
   setText("title", texts.welcome_title || BASE_CUSTOMIZATION.texts.welcome_title);
   setText("subtitle", texts.welcome_subtitle || BASE_CUSTOMIZATION.texts.welcome_subtitle);
-  setText("btnNext", texts.cta_button || BASE_CUSTOMIZATION.texts.cta_button);
+  startButtonLabel = texts.cta_button || BASE_CUSTOMIZATION.texts.cta_button;
 
   const watermark = document.getElementById("watermark");
   if (!watermark) return;
@@ -328,18 +398,21 @@ async function postAnswer(choiceId) {
   });
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
+async function bootstrapRunner() {
   if (!SESSION?.sessionId || !SESSION?.userId || !SESSION?.sessionToken) {
     setText("status", "Sesion invalida. Inicia desde el catalogo.");
     return;
   }
 
   const btnNext = document.getElementById("btnNext");
+  let gameStarted = false;
 
   const stateResp = await getState();
   if (stateResp.res.ok) {
     applyCustomization(stateResp.data.customization || {}, !!stateResp.data.preview_mode);
   }
+  setText("btnNext", startButtonLabel);
+  resetWelcomeState();
 
   async function loadQuestion() {
     stopTimer();
@@ -348,11 +421,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const { res, data } = await getNext();
     if (!res.ok) {
       setText("status", `Error: ${data?.error || res.status}`);
-      return;
+      return { loaded: false, finished: false };
     }
 
     if (data.finished) {
       setText("status", `Finalizado · Score ${data?.result?.score ?? 0}`);
+      setQuestionAreaVisible(true);
       setText("questionText", "Juego terminado");
       document.getElementById("choices").innerHTML = "";
       btnNext.disabled = true;
@@ -361,11 +435,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         timerEl.classList.add("hidden");
         timerEl.textContent = "";
       }
-      return;
+      redirectToReturnTarget();
+      return { loaded: false, finished: true };
     }
 
     const q = data.question;
+    setQuestionAreaVisible(true);
     setText("status", "");
+    setText("btnNext", "Siguiente");
     setText("questionText", q.text);
 
     renderChoices(q.choices, async (pickedChoiceId) => {
@@ -389,8 +466,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     startTimer();
+    return { loaded: true, finished: false };
   }
 
-  btnNext.addEventListener("click", loadQuestion);
-  await loadQuestion();
-});
+  btnNext.addEventListener("click", async () => {
+    if (btnNext.disabled) return;
+
+    btnNext.disabled = true;
+    if (!gameStarted) {
+      gameStarted = true;
+      setText("btnNext", "Siguiente");
+    }
+
+    const result = await loadQuestion();
+    if (!result.finished) {
+      btnNext.disabled = false;
+    }
+    if (!result.loaded && !result.finished) {
+      gameStarted = false;
+      setText("btnNext", startButtonLabel);
+      resetWelcomeState();
+    }
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    void bootstrapRunner();
+  });
+} else {
+  void bootstrapRunner();
+}

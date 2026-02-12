@@ -27,6 +27,7 @@ export type SuperadminOverviewResponse = {
     game_name: string;
     fecha_inicio: string;
     fecha_fin: string;
+    fechas_evento?: string[];
     estado: string;
     creado_en: string | null;
   }>;
@@ -64,4 +65,3 @@ export async function fetchAdminOverview(params?: { date_from?: string; date_to?
     method: "GET",
   });
 }
-

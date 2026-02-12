@@ -19,7 +19,7 @@ from api_auth.auth import token_required
 from trivia.models import Choice, Question, QuestionSet
 from trivia.services import get_company_for_user, pick_question_set_for_session
 from wallet.models import Wallet, LedgerEntry
-from .models import ContratoJuego, Game, GameCustomization, GameSession
+from .models import ContratoJuego, ContratoJuegoFecha, Game, GameCustomization, GameSession
 
 
 CONTRACT_ASSET_FIELDS = {
@@ -415,9 +415,20 @@ def _to_bool(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "si", "on"}
 
 
+def _event_dates_from_contract(contrato: ContratoJuego) -> list[date]:
+    return [item.fecha for item in contrato.fechas_evento.all()]
+
+
+def _contract_is_available_on_date(contrato: ContratoJuego, target_date: date) -> bool:
+    fechas_evento = _event_dates_from_contract(contrato)
+    if fechas_evento:
+        return target_date in fechas_evento
+    return contrato.fecha_inicio <= target_date <= contrato.fecha_fin
+
+
 def _get_user_contract_or_404(request, contract_id: int):
     return get_object_or_404(
-        ContratoJuego.objects.select_related("juego", "customization", "trivia_question_set"),
+        ContratoJuego.objects.select_related("juego", "customization", "trivia_question_set").prefetch_related("fechas_evento"),
         id=contract_id,
         usuario=request.user,
     )
@@ -515,7 +526,7 @@ def _pick_question_set_for_preview(user, juego):
 @token_required
 def crear_contrato_juego(request):
     """
-    Crea un ContratoJuego para un juego y un rango de fechas.
+    Crea un ContratoJuego para un juego en una o varias fechas exactas.
     Debita créditos de la billetera (wallet) en el mismo transaction.
     """
     body, err = _leer_json(request)
@@ -523,25 +534,56 @@ def crear_contrato_juego(request):
         return err
 
     slug = (body.get("game_slug") or body.get("slug") or "").strip()
+    fechas_evento = None
+    raw_fechas_evento = body.get("fechas_evento")
+    if raw_fechas_evento is not None:
+        if not isinstance(raw_fechas_evento, list):
+            return JsonResponse({"error": "fechas_evento_invalido"}, status=400)
+
+        parsed_dates = []
+        for raw_value in raw_fechas_evento:
+            parsed = _parse_date(str(raw_value or "").strip())
+            if not parsed:
+                return JsonResponse({"error": "fechas_evento_invalidas"}, status=400)
+            parsed_dates.append(parsed)
+
+        fechas_evento = sorted(set(parsed_dates))
+        if not fechas_evento:
+            return JsonResponse({"error": "fechas_evento_requeridas"}, status=400)
+
     fecha_evento = _parse_date((body.get("fecha_evento") or "").strip())
     fecha_inicio = _parse_date((body.get("fecha_inicio") or "").strip())
     fecha_fin = _parse_date((body.get("fecha_fin") or "").strip())
 
-    # Nuevo formato recomendado: fecha exacta.
-    if fecha_evento:
-        fecha_inicio = fecha_evento
-        fecha_fin = fecha_evento
+    if fechas_evento is None and fecha_evento:
+        fechas_evento = [fecha_evento]
 
     if not slug:
         return JsonResponse({"error": "game_slug_requerido"}, status=400)
-    if not fecha_inicio or not fecha_fin:
-        return JsonResponse({"error": "fechas_invalidas"}, status=400)
-    if fecha_inicio > fecha_fin:
-        return JsonResponse({"error": "rango_fechas_invalido"}, status=400)
 
     juego = Game.objects.filter(slug=slug, is_enabled=True).first()
     if not juego:
         return JsonResponse({"error": "juego_no_encontrado_o_inhabilitado"}, status=404)
+
+    hoy = timezone.localdate()
+    is_explicit_dates_mode = fechas_evento is not None
+    if is_explicit_dates_mode:
+        fechas_pasadas = [f.isoformat() for f in fechas_evento if f < hoy]
+        if fechas_pasadas:
+            return JsonResponse({"error": "fecha_pasada_no_permitida", "fechas": fechas_pasadas}, status=400)
+
+        fecha_inicio = fechas_evento[0]
+        fecha_fin = fechas_evento[-1]
+        unidades_cobradas = len(fechas_evento)
+    else:
+        if not fecha_inicio or not fecha_fin:
+            return JsonResponse({"error": "fechas_invalidas"}, status=400)
+        if fecha_inicio > fecha_fin:
+            return JsonResponse({"error": "rango_fechas_invalido"}, status=400)
+        if fecha_inicio < hoy:
+            return JsonResponse({"error": "fecha_pasada_no_permitida", "fecha_inicio": fecha_inicio.isoformat()}, status=400)
+
+        unidades_cobradas = (fecha_fin - fecha_inicio).days + 1
 
     # Por ahora usamos cost_per_play como "costo por día"
     # (si después agregamos cost_per_day, cambiamos acá y listo)
@@ -549,18 +591,25 @@ def crear_contrato_juego(request):
     if costo_por_dia <= 0:
         return JsonResponse({"error": "costo_invalido"}, status=400)
 
-    dias = (fecha_fin - fecha_inicio).days + 1
-    costo_total = costo_por_dia * dias
+    costo_total = costo_por_dia * unidades_cobradas
 
-    # Opcional: evitar solapamientos para mismo user+game
-    # (si querés permitir varios contratos paralelos, sacalo)
-    solapa = ContratoJuego.objects.filter(
+    contratos_solapados_qs = ContratoJuego.objects.filter(
         usuario=request.user,
         juego=juego,
         estado__in=[ContratoJuego.Estado.ACTIVO, ContratoJuego.Estado.BORRADOR],
         fecha_inicio__lte=fecha_fin,
         fecha_fin__gte=fecha_inicio,
-    ).exists()
+    ).prefetch_related("fechas_evento")
+
+    if is_explicit_dates_mode:
+        solapa = any(
+            _contract_is_available_on_date(contrato_existente, fecha)
+            for contrato_existente in contratos_solapados_qs
+            for fecha in fechas_evento
+        )
+    else:
+        solapa = contratos_solapados_qs.exists()
+
     if solapa:
         return JsonResponse({"error": "ya_existe_contrato_en_esas_fechas"}, status=409)
 
@@ -583,6 +632,10 @@ def crear_contrato_juego(request):
             fecha_fin=fecha_fin,
             estado=ContratoJuego.Estado.ACTIVO,
         )
+        if is_explicit_dates_mode:
+            ContratoJuegoFecha.objects.bulk_create(
+                [ContratoJuegoFecha(contrato=contrato, fecha=fecha) for fecha in fechas_evento]
+            )
 
         # Debitar saldo
         Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") - costo_total)
@@ -606,6 +659,7 @@ def crear_contrato_juego(request):
                 "game_slug": juego.slug,
                 "fecha_inicio": str(contrato.fecha_inicio),
                 "fecha_fin": str(contrato.fecha_fin),
+                "fechas_evento": [fecha.isoformat() for fecha in (fechas_evento or [])],
                 "estado": contrato.estado,
                 "costo_total": costo_total,
             },
@@ -621,6 +675,7 @@ def mis_contratos(request):
         ContratoJuego.objects
         .filter(usuario=request.user)
         .select_related("juego", "customization", "trivia_question_set")
+        .prefetch_related("fechas_evento")
         .order_by("-creado_en")
     )
     return JsonResponse({"resultados": [_serializar_contrato(c) for c in qs]}, status=200)
@@ -1046,13 +1101,14 @@ def iniciar_juego_contrato(request, contract_id: int):
         return JsonResponse({"error": "contrato_no_activo"}, status=409)
 
     hoy = timezone.localdate()
-    if contrato.fecha_inicio > hoy or contrato.fecha_fin < hoy:
+    if not _contract_is_available_on_date(contrato, hoy):
         return JsonResponse(
             {
                 "error": "fuera_de_fecha_evento",
                 "hoy": str(hoy),
                 "fecha_inicio": str(contrato.fecha_inicio),
                 "fecha_fin": str(contrato.fecha_fin),
+                "fechas_evento": [f.isoformat() for f in _event_dates_from_contract(contrato)],
             },
             status=409,
         )
@@ -1077,7 +1133,7 @@ def preview_juego_contrato(request, contract_id: int):
 def lanzar_juego_contrato(request, contract_id: int):
     """
     Lanza automaticamente:
-    - Modo evento si hoy esta dentro del rango contratado.
+    - Modo evento si hoy está dentro de las fechas contratadas.
     - Modo preview (con watermark) fuera del rango.
     """
     contrato = _get_user_contract_or_404(request, contract_id)
@@ -1087,7 +1143,7 @@ def lanzar_juego_contrato(request, contract_id: int):
     hoy = timezone.localdate()
     en_rango_evento = (
         contrato.estado == ContratoJuego.Estado.ACTIVO
-        and contrato.fecha_inicio <= hoy <= contrato.fecha_fin
+        and _contract_is_available_on_date(contrato, hoy)
     )
 
     return _build_session_payload_for_contract(
@@ -1116,11 +1172,13 @@ def _leer_json(request):
 
 def _serializar_contrato(c: ContratoJuego):
     customization = getattr(c, "customization", None)
+    fechas_evento = _event_dates_from_contract(c)
     return {
         "id": c.id,
         "juego": {"slug": c.juego.slug, "nombre": c.juego.name},
         "fecha_inicio": c.fecha_inicio.isoformat(),
         "fecha_fin": c.fecha_fin.isoformat(),
+        "fechas_evento": [f.isoformat() for f in fechas_evento],
         "estado": c.estado,
         "creado_en": c.creado_en.isoformat() if c.creado_en else None,
         "customization_updated_at": customization.actualizado_en.isoformat() if customization else None,
@@ -1246,9 +1304,10 @@ def iniciar_juego(request, slug: str):
         return JsonResponse({"error": "costo_invalido", "costo": costo_base}, status=400)
 
     hoy = timezone.localdate()
-    contrato_activo = (
+    contratos_activos = (
         ContratoJuego.objects
         .select_related("customization", "trivia_question_set")
+        .prefetch_related("fechas_evento")
         .filter(
             usuario=request.user,
             juego=juego,
@@ -1257,7 +1316,10 @@ def iniciar_juego(request, slug: str):
             fecha_fin__gte=hoy,
         )
         .order_by("-fecha_inicio", "-id")
-        .first()
+    )
+    contrato_activo = next(
+        (contrato for contrato in contratos_activos if _contract_is_available_on_date(contrato, hoy)),
+        None,
     )
     cobra_partida = contrato_activo is None
     costo = costo_base if cobra_partida else 0
