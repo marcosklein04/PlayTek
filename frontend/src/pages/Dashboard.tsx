@@ -1,15 +1,41 @@
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Gamepad2, TrendingUp, Calendar, ArrowRight, Sparkles, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/Sidebar';
 import { GameCard } from '@/components/GameCard';
+import { GameDetailModal } from '@/components/GameDetailModal';
+import { PurchaseFlowModal } from '@/components/PurchaseFlowModal';
 import { useAuth } from '@/context/AuthContext';
-import { gamesData } from '@/data/games';
+import { fetchGames, previewGame } from '@/api/games';
+import { mapApiGameToGame } from '@/mappers/gameMapper';
+import { Game } from '@/types';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Dashboard() {
-  const { user, contractedGames, contractGame } = useAuth();
+  const { user, contractedGames, refreshContractedGames } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [games, setGames] = useState<Game[]>([]);
+  const [loadingGames, setLoadingGames] = useState(true);
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [gameToContract, setGameToContract] = useState<Game | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoadingGames(true);
+        const { resultados } = await fetchGames();
+        setGames(resultados.map(mapApiGameToGame));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Error al cargar juegos';
+        toast({ title: 'Error cargando juegos', description: message, variant: 'destructive' });
+      } finally {
+        setLoadingGames(false);
+      }
+    })();
+  }, [toast]);
 
   const stats = [
     { label: 'Juegos contratados', value: contractedGames.length, icon: Gamepad2, color: 'text-primary' },
@@ -17,7 +43,41 @@ export default function Dashboard() {
     { label: 'Jugadores totales', value: '2.4K', icon: TrendingUp, color: 'text-success' },
   ];
 
-  const popularGames = gamesData.filter(g => g.isPopular).slice(0, 3);
+  const popularGames = useMemo(() => {
+    const byPreferredSlug = ['trivia', 'trivia-sparkle']
+      .map((slug) => games.find((game) => game.id === slug))
+      .filter((game): game is Game => Boolean(game));
+
+    const additionalTrivia = games.filter(
+      (game) => game.category === 'trivia' && !byPreferredSlug.some((preferred) => preferred.id === game.id),
+    );
+
+    return [...byPreferredSlug, ...additionalTrivia].slice(0, 2);
+  }, [games]);
+
+  const handleOpenContract = (gameId: string) => {
+    const game = games.find((item) => item.id === gameId) || null;
+    setGameToContract(game);
+    setSelectedGame(null);
+  };
+
+  const handlePreviewGame = async (gameId: string) => {
+    try {
+      const res = await previewGame(gameId);
+      const runnerUrl = new URL(res.juego.runner_url, window.location.origin);
+      const returnTo = new URL('/dashboard', window.location.origin);
+      runnerUrl.searchParams.set('return_to', returnTo.toString());
+
+      toast({
+        title: 'Modo prueba',
+        description: 'Abrimos el juego en preview con marca de agua.',
+      });
+      window.location.href = runnerUrl.toString();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo abrir el preview';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -152,19 +212,48 @@ export default function Dashboard() {
               <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {popularGames.map((game, idx) => (
               <GameCard
                 key={game.id}
                 game={game}
                 index={idx}
-                onContract={contractGame}
-                onViewDetails={() => navigate('/catalog')}
+                onContract={handleOpenContract}
+                onViewDetails={setSelectedGame}
                 isContracted={contractedGames.some(cg => cg.id === game.id)}
               />
             ))}
           </div>
+          {loadingGames && (
+            <p className="text-sm text-muted-foreground mt-4">
+              Cargando juegos populares...
+            </p>
+          )}
+          {!loadingGames && popularGames.length === 0 && (
+            <p className="text-sm text-muted-foreground mt-4">
+              No se encontraron trivias para mostrar.
+            </p>
+          )}
         </motion.section>
+
+        <GameDetailModal
+          game={selectedGame}
+          isOpen={!!selectedGame}
+          onClose={() => setSelectedGame(null)}
+          onContract={handleOpenContract}
+          onPreview={handlePreviewGame}
+          isContracted={selectedGame ? contractedGames.some((cg) => cg.id === selectedGame.id) : false}
+        />
+
+        <PurchaseFlowModal
+          game={gameToContract}
+          open={!!gameToContract}
+          onClose={() => setGameToContract(null)}
+          onPurchased={() => {
+            toast({ title: 'Contrato creado', description: 'Ya podes personalizar este juego.' });
+            void refreshContractedGames();
+          }}
+        />
       </main>
     </div>
   );

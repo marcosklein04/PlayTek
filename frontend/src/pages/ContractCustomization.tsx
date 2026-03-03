@@ -77,6 +77,8 @@ export default function ContractCustomization() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvReplaceExisting, setCsvReplaceExisting] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
+  const supportsTriviaQuestions = gameSlug === "trivia-sparkle";
+  const isTriviaSparkle = gameSlug === "trivia-sparkle";
 
   const disabled = useMemo(
     () => !config || saving || starting || uploadingAsset !== null || questionsSaving || csvUploading,
@@ -111,7 +113,7 @@ export default function ContractCustomization() {
   }, [contractId, validId, navigate, toast]);
 
   useEffect(() => {
-    if (!validId || gameSlug !== "trivia") return;
+    if (!validId || !supportsTriviaQuestions) return;
 
     (async () => {
       try {
@@ -126,7 +128,7 @@ export default function ContractCustomization() {
         setQuestionsLoading(false);
       }
     })();
-  }, [contractId, validId, gameSlug, toast]);
+  }, [contractId, validId, supportsTriviaQuestions, toast]);
 
   const updateField = (path: string[], value: string | number | boolean) => {
     setConfig((prev) => {
@@ -138,6 +140,27 @@ export default function ContractCustomization() {
       }
       cursor[path[path.length - 1]] = value;
       return next;
+    });
+  };
+
+  const applyPlayteckPalette = () => {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev);
+      next.branding.primary_color = "#00f5e9";
+      next.branding.secondary_color = "#081a2b";
+      next.visual.screen_background_color = "#050e1a";
+      next.visual.question_bg_color = "#0f2034";
+      next.visual.question_border_color = "#1f6f90";
+      next.visual.question_text_color = "#e7f6ff";
+      next.visual.option_bg_color = "#12324a";
+      next.visual.option_border_color = "#1f6f90";
+      next.watermark.color = "#00f5e9";
+      return next;
+    });
+    toast({
+      title: "Paleta Playteck aplicada",
+      description: "Ajustamos colores para Trivia Sparkle. Guarda para confirmar.",
     });
   };
 
@@ -387,7 +410,14 @@ export default function ContractCustomization() {
         {!loading && config && (
           <div className="space-y-6">
             <section className="glass-card p-5">
-              <h2 className="text-lg font-semibold mb-4">Branding</h2>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">Branding</h2>
+                {isTriviaSparkle && (
+                  <Button variant="secondary" size="sm" onClick={applyPlayteckPalette}>
+                    Aplicar paleta Playteck
+                  </Button>
+                )}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-muted-foreground">Color primario</label>
@@ -570,10 +600,10 @@ export default function ContractCustomization() {
               </div>
             </section>
 
-            {gameSlug === "trivia" && (
+            {supportsTriviaQuestions && (
               <section className="glass-card p-5 space-y-5">
                 <div>
-                  <h2 className="text-lg font-semibold">Preguntas de Trivia</h2>
+                  <h2 className="text-lg font-semibold">Preguntas de Trivia Sparkle</h2>
                   <p className="text-sm text-muted-foreground mt-1">
                     Crea y edita las preguntas especificas de este contrato.
                   </p>

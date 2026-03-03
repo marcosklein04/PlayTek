@@ -11,6 +11,7 @@ urlpatterns = [
     path("accounts/", include("django.contrib.auth.urls")),
 
 
+    path("api/trivia-sparkle/", include("trivia_sparkle.api_urls")),
     path("api/", include("api_auth.urls")),
     path("", include("wallet.urls")),
     path("api/", include("wallet.urls")),
@@ -20,6 +21,7 @@ urlpatterns = [
     path("runner/", include("games_catalog.runner_urls")),
     path("runner/", include("hangman.urls")),
     path("runner/", include("trivia.urls")),
+    path("runner/", include("trivia_sparkle.urls")),
 
 
     path("api/admin/credit-packs", wallet_admin_views.admin_credit_packs_list),

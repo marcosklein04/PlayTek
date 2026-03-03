@@ -1,0 +1,37 @@
+{
+  "startScreen": {
+    "title": "TRIVIA SPARKLE",
+    "heroImageKey": null,
+    "backgroundImageKey": null,
+    "startButtonText": "Empezar a jugar",
+    "showLivesPill": true,
+    "showTimerPill": true,
+    "showQuestionsPill": true,
+    "style": {
+      "backgroundTop": "#1f1e66",
+      "backgroundMiddle": "#1c4f9c",
+      "backgroundBottom": "#2b2f72",
+      "overlayColor": "#0f1254",
+      "overlayOpacity": 0.75,
+      "stripeColor": "#1b55ae",
+      "stripeOpacity": 0.55,
+      "titleBackground": "#f97316",
+      "titleBorder": "#fef08a",
+      "titleText": "#1e2184",
+      "frameOuterBackground": "#612fa5",
+      "frameOuterBorder": "#22d3ee",
+      "frameInnerBorder": "#22d3ee",
+      "pillsBackground": "#22319f",
+      "pillsBorder": "#22d3ee",
+      "pillsText": "#ffffff",
+      "buttonFrom": "#facc15",
+      "buttonTo": "#fb923c",
+      "buttonText": "#171a5f"
+    }
+  },
+  "gameplay": {
+    "lives": 3,
+    "secondsPerQuestion": 30,
+    "questionsPerGame": 10
+  }
+}

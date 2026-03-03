@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Trivia Normal</title>
+  <desc id="desc">Logo TRIVIA con colores planos sobre fondo azul gris.</desc>
+  <rect width="1600" height="900" fill="#596180" />
+  <g font-family="Montserrat, Arial, sans-serif" font-size="340" font-weight="800">
+    <text x="150" y="575" fill="#f3523d">T</text>
+    <text x="390" y="575" fill="#f5a31b">R</text>
+    <text x="650" y="575" fill="#a3b08a">I</text>
+    <text x="770" y="575" fill="#ef3440">V</text>
+    <text x="1065" y="575" fill="#3f7ec9">I</text>
+    <text x="1190" y="575" fill="#ef7b24">A</text>
+  </g>
+</svg>

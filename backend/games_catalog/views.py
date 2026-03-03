@@ -39,6 +39,7 @@ ALLOWED_ASSET_CONTENT_TYPES = {
 }
 MAX_ASSET_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
 MAX_TRIVIA_CHOICES = 6
+CONTRACT_TRIVIA_GAMES = {"trivia", "trivia-sparkle"}
 
 
 def _parse_date(s: str):
@@ -88,6 +89,51 @@ def _default_customization_for_game(game_slug: str) -> dict:
                 "enabled": True,
                 "color": "#ff0000",
                 "opacity": 0.28,
+                "position": "center",
+                "font_size": 96,
+            },
+            "content": {
+                "question_set_id": None,
+            },
+        }
+
+    if game_slug == "trivia-sparkle":
+        return {
+            "branding": {
+                "primary_color": "#00f5e9",
+                "secondary_color": "#081a2b",
+                "logo_url": "",
+                "background_url": "",
+                "welcome_image_url": "",
+                "watermark_text": "MODO PRUEBA",
+            },
+            "texts": {
+                "welcome_title": "TRIVIA SPARKLE",
+                "welcome_subtitle": "Competi con tu equipo en tiempo real",
+                "cta_button": "Comenzar",
+            },
+            "rules": {
+                "show_timer": True,
+                "timer_seconds": 30,
+                "points_per_correct": 100,
+                "max_questions": 10,
+                "use_lives": True,
+                "lives": 3,
+            },
+            "visual": {
+                "question_bg_color": "#0f2034",
+                "question_border_color": "#1f6f90",
+                "question_text_color": "#e7f6ff",
+                "question_font_family": "Outfit, Inter, Arial, sans-serif",
+                "option_border_color": "#1f6f90",
+                "option_bg_color": "#12324a",
+                "screen_background_color": "#050e1a",
+                "container_bg_image_url": "",
+            },
+            "watermark": {
+                "enabled": True,
+                "color": "#00f5e9",
+                "opacity": 0.24,
                 "position": "center",
                 "font_size": 96,
             },
@@ -315,7 +361,8 @@ def _get_or_create_contract_trivia_question_set(contrato: ContratoJuego, *, crea
     if not create:
         return None, None
 
-    question_set_name = f"Contrato #{contrato.id} - Trivia"
+    game_name = contrato.juego.name or contrato.juego.slug
+    question_set_name = f"Contrato #{contrato.id} - {game_name}"
     question_set, _ = QuestionSet.objects.get_or_create(
         company=company,
         name=question_set_name,
@@ -499,11 +546,11 @@ def _build_session_payload_for_contract(
     )
 
     question_set = None
-    if juego.slug == "trivia":
+    if juego.slug in CONTRACT_TRIVIA_GAMES:
         question_set = _get_contract_trivia_question_set_for_play(contrato)
-        if not question_set:
+        if not question_set and juego.slug == "trivia":
             question_set = pick_question_set_for_session(user=request.user, juego=juego)
-        if not question_set:
+        if juego.slug == "trivia" and not question_set:
             return JsonResponse({"error": "sesion_sin_question_set"}, status=409)
 
     client_state = {
@@ -836,7 +883,7 @@ def guardar_customizacion_contrato(request, contract_id: int):
 @token_required
 def contrato_trivia_questions(request, contract_id: int):
     contrato = _get_user_contract_or_404(request, contract_id)
-    if contrato.juego.slug != "trivia":
+    if contrato.juego.slug not in CONTRACT_TRIVIA_GAMES:
         return JsonResponse({"error": "juego_no_soporta_preguntas_trivia"}, status=409)
 
     if request.method == "GET":
@@ -920,7 +967,7 @@ def contrato_trivia_questions(request, contract_id: int):
 @token_required
 def contrato_trivia_question_detalle(request, contract_id: int, question_id: int):
     contrato = _get_user_contract_or_404(request, contract_id)
-    if contrato.juego.slug != "trivia":
+    if contrato.juego.slug not in CONTRACT_TRIVIA_GAMES:
         return JsonResponse({"error": "juego_no_soporta_preguntas_trivia"}, status=409)
     if not _is_contract_editable(contrato):
         return JsonResponse({"error": "contrato_no_editable"}, status=409)
@@ -981,7 +1028,7 @@ def contrato_trivia_question_detalle(request, contract_id: int, question_id: int
 @token_required
 def contrato_trivia_import_csv(request, contract_id: int):
     contrato = _get_user_contract_or_404(request, contract_id)
-    if contrato.juego.slug != "trivia":
+    if contrato.juego.slug not in CONTRACT_TRIVIA_GAMES:
         return JsonResponse({"error": "juego_no_soporta_preguntas_trivia"}, status=409)
     if not _is_contract_editable(contrato):
         return JsonResponse({"error": "contrato_no_editable"}, status=409)
@@ -1451,20 +1498,20 @@ def iniciar_juego(request, slug: str):
             "juego": juego.slug,
             "iniciado": True,
         }
-        if juego.slug == "trivia":
+        if juego.slug in CONTRACT_TRIVIA_GAMES:
             client_state["customization"] = custom_config
             client_state["preview_mode"] = preview_mode
             if contrato_activo:
                 client_state["contract_id"] = contrato_activo.id
 
         question_set = None
-        # EL 1: si es trivia, seteamos question_set en la sesión
-        if juego.slug == "trivia":
+        # Si el juego usa banco de preguntas de trivia, adjuntamos question_set si existe.
+        if juego.slug in CONTRACT_TRIVIA_GAMES:
             if contrato_activo:
                 question_set = _get_contract_trivia_question_set_for_play(contrato_activo)
-            if not question_set:
+            if juego.slug == "trivia" and not question_set:
                 question_set = pick_question_set_for_session(user=request.user, juego=juego)
-            if not question_set:
+            if juego.slug == "trivia" and not question_set:
                 return JsonResponse(
                     {"error": "sesion_sin_question_set"},
                     status=409
@@ -1528,11 +1575,11 @@ def preview_juego(request, slug: str):
         "preview_mode": True,
     }
 
-    if juego.slug == "trivia":
-        question_set = _pick_question_set_for_preview(request.user, juego)
-        if not question_set:
-            return JsonResponse({"error": "sesion_sin_question_set"}, status=409)
-
+    if juego.slug in CONTRACT_TRIVIA_GAMES:
+        if juego.slug == "trivia":
+            question_set = _pick_question_set_for_preview(request.user, juego)
+            if not question_set:
+                return JsonResponse({"error": "sesion_sin_question_set"}, status=409)
         client_state["customization"] = _default_customization_for_game(juego.slug)
 
     sesion = GameSession.objects.create(

@@ -99,6 +99,18 @@ CATALOGO = [
     "habilitado": True,
     "tags": ["trivia", "quiz", "web based"],
     },
+    {
+    "slug": "trivia-sparkle",
+    "nombre": "Trivia Sparkle",
+    "descripcion": "Trivia visual con panel admin propio para preguntas e imagenes.",
+    "imagen_portada_url": "",
+    "runner_url": "/runner/trivia-sparkle",
+    "etiqueta_precio": "$99/partida",
+    "costo_por_partida": 1,
+    "destacado": False,
+    "habilitado": True,
+    "tags": ["trivia", "quiz", "web based"],
+    },
 ]
 
 class Command(BaseCommand):

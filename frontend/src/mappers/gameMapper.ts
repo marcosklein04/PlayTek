@@ -1,6 +1,11 @@
 import { Game } from "@/types";
 import { ApiGame } from "@/api/games";
 
+const FALLBACK_IMAGE_BY_SLUG: Record<string, string> = {
+  trivia: "/img/trivia-normal.svg",
+  "trivia-sparkle": "/img/trivia-sparkle.svg",
+};
+
 function parseNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -30,6 +35,12 @@ function buildMiniBio(description: string, shortDescription: string): string {
   return `${clean.slice(0, 177)}...`;
 }
 
+function resolveCoverImage(api: ApiGame): string {
+  const remoteImage = (api.imagen_portada || "").trim();
+  if (remoteImage) return remoteImage;
+  return FALLBACK_IMAGE_BY_SLUG[api.slug] || "/placeholder.svg";
+}
+
 export function mapApiGameToGame(api: ApiGame): Game {
   const description = api.descripcion || "";
   const shortDescription = (api.descripcion || "").slice(0, 120);
@@ -42,7 +53,7 @@ export function mapApiGameToGame(api: ApiGame): Game {
     description,
     shortDescription: shortDescription || description || "Sin descripción",
     miniBio: buildMiniBio(description, shortDescription),
-    image: api.imagen_portada || "/placeholder.png",
+    image: resolveCoverImage(api),
     category: mapCategory(api.tags),
     modality: [],
     pricing: {
@@ -57,4 +68,3 @@ export function mapApiGameToGame(api: ApiGame): Game {
     isNew: false,
   };
 }
-

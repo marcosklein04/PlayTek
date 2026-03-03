@@ -1,9 +1,13 @@
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const ENV_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+// En desarrollo usamos siempre rutas relativas y el proxy de Vite (/api -> backend).
+// Esto evita CORS aunque VITE_API_BASE_URL tenga un valor viejo.
+export const API_BASE_URL = import.meta.env.DEV ? "" : ENV_API_BASE_URL;
 
 export function apiUrl(path: string) {
   if (path.startsWith("http")) return path;
-  return `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
 }
 
 export async function http<T>(path: string, init?: RequestInit): Promise<T> {

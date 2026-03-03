@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'hangman',
     'clientes',
     'trivia',
+    'trivia_sparkle',
     
 ]
 
@@ -151,6 +152,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8080",
 ]
 
+# Dev fallback: evita bloqueos de CORS durante desarrollo local.
+# En producción esto debe quedar desactivado vía env.
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "true" if DEBUG else "false").lower() == "true"
+
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
 MP_SANDBOX = os.getenv("MP_SANDBOX", "false").lower() == "true"
+MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")
+MP_NOTIFICATION_URL = os.getenv("MP_NOTIFICATION_URL", "")
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:8080")

@@ -1,11 +1,11 @@
-import { API_BASE_URL } from "@/api/http";
+import { apiUrl } from "@/api/http";
 
 function getToken() {
   // ✅ mismo key que AuthContext
   return localStorage.getItem("access_token") || localStorage.getItem("token") || "";
 }
 
-export { API_BASE_URL, getToken }
+export { getToken }
 
 export async function apiFetch<T>(
   path: string,
@@ -23,9 +23,7 @@ export async function apiFetch<T>(
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const url = path.startsWith("http")
-    ? path
-    : `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+  const url = apiUrl(path);
 
   const res = await fetch(url, { ...opts, headers });
 

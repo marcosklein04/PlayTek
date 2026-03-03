@@ -1,0 +1,50 @@
+[
+  {
+    "id": "q-demo-1",
+    "type": "text_answers",
+    "prompt": "¿Cuál es la capital de Argentina?",
+    "questionImageKey": null,
+    "correctAnswerId": "a-demo-1-1",
+    "answers": [
+      {
+        "id": "a-demo-1-1",
+        "label": "Buenos Aires",
+        "imageKey": null
+      },
+      {
+        "id": "a-demo-1-2",
+        "label": "Córdoba",
+        "imageKey": null
+      }
+    ]
+  },
+  {
+    "id": "q-demo-2",
+    "type": "image_answers",
+    "prompt": "¿Qué caballo es blanco?",
+    "questionImageKey": "question-horse",
+    "correctAnswerId": "a-demo-2-1",
+    "answers": [
+      {
+        "id": "a-demo-2-1",
+        "label": "Caballo blanco",
+        "imageKey": "horse-white"
+      },
+      {
+        "id": "a-demo-2-2",
+        "label": "Caballo negro",
+        "imageKey": "horse-black"
+      },
+      {
+        "id": "a-demo-2-3",
+        "label": "Caballo marrón",
+        "imageKey": "horse-brown"
+      },
+      {
+        "id": "a-demo-2-4",
+        "label": "Caballo gris",
+        "imageKey": "horse-gray"
+      }
+    ]
+  }
+]

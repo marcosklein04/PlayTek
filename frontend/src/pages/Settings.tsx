@@ -79,7 +79,7 @@ export default function Settings() {
         </div>
       ),
     },
-    {
+    /*{
       title: 'Facturación',
       icon: CreditCard,
       content: (
@@ -99,7 +99,7 @@ export default function Settings() {
           <Button variant="outline">Ver historial de pagos</Button>
         </div>
       ),
-    },
+    },*/
   ];
 
   return (

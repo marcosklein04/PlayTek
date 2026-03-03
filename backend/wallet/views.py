@@ -1,5 +1,8 @@
+import hashlib
+import hmac
 import json
-import uuid
+from decimal import Decimal, InvalidOperation
+
 import requests
 
 from django.conf import settings
@@ -477,8 +480,11 @@ def create_topup(request):
     )
 
     # 2) Armamos URLs
-    # Webhook (en prod tiene que ser un dominio público)
-    notification_url = request.build_absolute_uri("/api/mp/webhook")
+    # Webhook: en local MP rechaza localhost/127.*, por eso permitimos override.
+    notification_url = (
+        getattr(settings, "MP_NOTIFICATION_URL", "") or
+        request.build_absolute_uri("/api/mp/webhook")
+    )
 
     frontend = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:8080")
     success_url = f"{frontend}/buy-credits?status=success&topup_id={topup.id}"
@@ -583,41 +589,219 @@ def recargar_billetera(request):
 
 
 
+MP_PAYMENT_PENDING_STATUSES = {"pending", "in_process", "in_mediation", "authorized"}
+MP_PAYMENT_REJECTED_STATUSES = {"rejected"}
+MP_PAYMENT_CANCELLED_STATUSES = {"cancelled", "charged_back"}
+MP_PAYMENT_EXPIRED_STATUSES = {"expired"}
+
+
+def _parse_json_body(request):
+    if not request.body:
+        return {}
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_payment_id(request, payload):
+    query_payment_id = request.GET.get("data.id") or request.GET.get("id")
+    payload_data = payload.get("data")
+    body_payment_id = payload.get("id")
+    if isinstance(payload_data, dict):
+        body_payment_id = payload_data.get("id") or body_payment_id
+    payment_id = query_payment_id or body_payment_id
+    return str(payment_id).strip() if payment_id else ""
+
+
+def _parse_mp_signature(signature_value):
+    parts = {}
+    for chunk in (signature_value or "").split(","):
+        if "=" not in chunk:
+            continue
+        key, value = chunk.split("=", 1)
+        parts[key.strip().lower()] = value.strip()
+    return parts
+
+
+def _is_valid_mp_webhook_signature(request, payment_id):
+    secret = (getattr(settings, "MP_WEBHOOK_SECRET", "") or "").strip()
+    if not secret:
+        return True
+
+    signature = request.headers.get("x-signature", "")
+    request_id = request.headers.get("x-request-id", "")
+    if not signature or not request_id or not payment_id:
+        return False
+
+    signature_parts = _parse_mp_signature(signature)
+    ts = signature_parts.get("ts")
+    received_hash = signature_parts.get("v1")
+    if not ts or not received_hash:
+        return False
+
+    manifest = f"id:{payment_id};request-id:{request_id};ts:{ts};"
+    expected_hash = hmac.new(
+        key=secret.encode("utf-8"),
+        msg=manifest.encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected_hash, received_hash.lower())
+
+
+def _map_mp_status_to_topup_status(mp_status):
+    normalized = (mp_status or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized == "approved":
+        return WalletTopup.Status.APPROVED
+    if normalized in MP_PAYMENT_PENDING_STATUSES:
+        return WalletTopup.Status.PENDING
+    if normalized in MP_PAYMENT_REJECTED_STATUSES:
+        return WalletTopup.Status.REJECTED
+    if normalized in MP_PAYMENT_CANCELLED_STATUSES:
+        return WalletTopup.Status.CANCELLED
+    if normalized in MP_PAYMENT_EXPIRED_STATUSES:
+        return WalletTopup.Status.EXPIRED
+    return None
+
+
+def _parse_decimal(value):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _payment_matches_topup(payment_data, topup):
+    currency_id = str(payment_data.get("currency_id") or "").upper()
+    if currency_id and currency_id != "ARS":
+        return False, "currency_mismatch"
+
+    amount = _parse_decimal(payment_data.get("transaction_amount"))
+    expected_amount = _parse_decimal(topup.amount_ars)
+    if amount is None or expected_amount is None:
+        return False, "invalid_amount"
+    if amount.quantize(Decimal("0.01")) != expected_amount.quantize(Decimal("0.01")):
+        return False, "amount_mismatch"
+
+    return True, ""
+
+
+def _mp_get_json(url, *, params=None):
+    access_token = getattr(settings, "MP_ACCESS_TOKEN", "")
+    if not access_token:
+        return None, "mp_access_token_missing"
+
+    try:
+        response = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            params=params,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        return None, f"mp_network_error:{exc}"
+
+    try:
+        data = response.json() if response.content else {}
+    except Exception:
+        data = {"raw": response.text[:500]}
+
+    if response.status_code >= 400:
+        return None, f"mp_http_{response.status_code}:{data}"
+    if not isinstance(data, dict):
+        return None, "mp_invalid_response"
+
+    return data, None
+
+
+def _approve_topup(topup_id, *, payment_id, reference_type):
+    payment_id = str(payment_id or "").strip()
+    with transaction.atomic():
+        topup = WalletTopup.objects.select_for_update().select_related("user").get(id=topup_id)
+        if topup.status == WalletTopup.Status.APPROVED:
+            if payment_id and topup.mp_payment_id != payment_id:
+                topup.mp_payment_id = payment_id
+                topup.save(update_fields=["mp_payment_id"])
+            return topup, False
+
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(
+            user=topup.user,
+            defaults={"balance": 0},
+        )
+        Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") + topup.credits)
+
+        LedgerEntry.objects.create(
+            user=topup.user,
+            kind=LedgerEntry.Kind.TOPUP,
+            amount=int(topup.credits),
+            reference_type=reference_type,
+            reference_id=payment_id or str(topup.id),
+        )
+
+        topup.status = WalletTopup.Status.APPROVED
+        topup.approved_at = timezone.now()
+        if payment_id:
+            topup.mp_payment_id = payment_id
+            topup.save(update_fields=["status", "approved_at", "mp_payment_id"])
+        else:
+            topup.save(update_fields=["status", "approved_at"])
+
+        return topup, True
+
+
+def _sync_non_approved_topup_status(topup_id, *, target_status, payment_id=""):
+    if target_status == WalletTopup.Status.APPROVED:
+        return WalletTopup.Status.APPROVED
+
+    with transaction.atomic():
+        topup = WalletTopup.objects.select_for_update().get(id=topup_id)
+        if topup.status == WalletTopup.Status.APPROVED:
+            return topup.status
+
+        update_fields = []
+        if target_status and topup.status != target_status:
+            topup.status = target_status
+            update_fields.append("status")
+        if payment_id and topup.mp_payment_id != str(payment_id):
+            topup.mp_payment_id = str(payment_id)
+            update_fields.append("mp_payment_id")
+
+        if update_fields:
+            topup.save(update_fields=update_fields)
+
+        return topup.status
+
+
+def _pick_relevant_payment(results):
+    if not results:
+        return None
+
+    priority = ("approved", "rejected", "cancelled", "expired", "charged_back")
+    for status in priority:
+        payment = next((item for item in results if (item.get("status") or "").lower() == status), None)
+        if payment:
+            return payment
+    return results[0]
+
+
 # =========================
 # MOCK CHECKOUT (HTML)
 # =========================
 
 @require_GET
 def mock_checkout(request, uuid):
-    # Buscar por mp_preference_id (uuid string)
+    if not settings.DEBUG:
+        return HttpResponse("Not found", status=404)
+
     topup = WalletTopup.objects.filter(mp_preference_id=str(uuid)).first()
     if not topup:
         return HttpResponse("Topup inexistente", status=404)
 
-    # Si vienen con ?approve=1 => simular pago aprobado
     if request.GET.get("approve") == "1":
-        if topup.status != WalletTopup.Status.APPROVED:
-            with transaction.atomic():
-                # lock wallet
-                wallet, _ = Wallet.objects.select_for_update().get_or_create(
-                    user=topup.user,
-                    defaults={"balance": 0},
-                )
-
-                # acreditar créditos
-                Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") + topup.credits)
-
-                LedgerEntry.objects.create(
-                    user=topup.user,
-                    kind=LedgerEntry.Kind.TOPUP,
-                    amount=topup.credits,
-                    reference_type="wallet_topup",
-                    reference_id=str(topup.id),
-                )
-
-                topup.status = WalletTopup.Status.APPROVED
-                topup.approved_at = timezone.now()
-                topup.save(update_fields=["status", "approved_at"])
+        _approve_topup(topup.id, payment_id="MOCK_PAYMENT", reference_type="wallet_topup")
 
         return HttpResponse(
             f"""
@@ -630,7 +814,6 @@ def mock_checkout(request, uuid):
             content_type="text/html",
         )
 
-    # Pantalla dummy con link para aprobar
     return HttpResponse(
         f"""
         <html>
@@ -657,200 +840,176 @@ def mock_checkout(request, uuid):
 @csrf_exempt
 @require_POST
 def mock_checkout_approve(request, uuid):
-    """
-    Simula webhook/aprobación de MP:
-    - busca topup por mp_preference_id
-    - si está PENDING -> marca APPROVED
-    - acredita wallet + ledger
-    - redirige al frontend
-    """
+    if not settings.DEBUG:
+        return HttpResponse("Not found", status=404)
+
     ref = str(uuid)
+    topup = WalletTopup.objects.filter(mp_preference_id=ref).first()
+    if not topup:
+        return HttpResponse("Topup inexistente", status=404)
 
-    with transaction.atomic():
-        try:
-            topup = WalletTopup.objects.select_for_update().select_related("user").get(mp_preference_id=ref)
-        except WalletTopup.DoesNotExist:
-            return HttpResponse("Topup inexistente", status=404)
+    _approve_topup(topup.id, payment_id="MOCK_PAYMENT", reference_type="wallet_topup")
 
-        # idempotente
-        if topup.status != WalletTopup.Status.APPROVED:
-            wallet, _ = Wallet.objects.select_for_update().get_or_create(
-                user=topup.user,
-                defaults={"balance": 0},
-            )
-
-            # Acreditar
-            Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") + topup.credits)
-
-            LedgerEntry.objects.create(
-                user=topup.user,
-                kind=LedgerEntry.Kind.TOPUP,
-                amount=int(topup.credits),
-                reference_type="wallet_topup",
-                reference_id=str(topup.id),
-            )
-
-            topup.status = WalletTopup.Status.APPROVED
-            topup.approved_at = timezone.now()
-            topup.mp_payment_id = topup.mp_payment_id or "MOCK_PAYMENT"
-            topup.save(update_fields=["status", "approved_at", "mp_payment_id"])
-
-    # Redirigir al frontend (default localhost)
     frontend = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:8080")
     return redirect(f"{frontend}/buy-credits?status=success&ref={ref}")
-
-
-##################################
-
-# MercadoPago Webhook (real)
-
-
-##################################
 
 
 @csrf_exempt
 @require_POST
 def mp_webhook(request):
-    """
-    MP manda notificaciones (no siempre viene con JSON completo).
-    En Checkout Pro suele venir:
-      - ?type=payment&data.id=XXXX
-      o en body: {"type":"payment","data":{"id":"..."}}
-
-    Estrategia:
-    1) Tomar payment_id
-    2) Consultar MP: GET /v1/payments/{id}
-    3) Si status=approved -> buscar topup por external_reference y acreditar
-    """
-    import requests
-
-    # 1) sacar payment id
-    payment_id = None
-
-    # querystring
-    payment_id = request.GET.get("data.id") or request.GET.get("id") or payment_id
-
-    # body json
-    try:
-        payload = json.loads(request.body.decode("utf-8")) if request.body else {}
-        payment_id = payment_id or (payload.get("data", {}) or {}).get("id")
-        # a veces viene "id" directo
-        payment_id = payment_id or payload.get("id")
-    except Exception:
-        payload = {}
+    payload = _parse_json_body(request)
+    payment_id = _extract_payment_id(request, payload)
 
     if not payment_id:
         return JsonResponse({"ok": True, "ignored": "no_payment_id"}, status=200)
+    if not _is_valid_mp_webhook_signature(request, payment_id):
+        return JsonResponse({"ok": True, "ignored": "invalid_signature"}, status=200)
 
-    # 2) consultar payment
-    headers = {"Authorization": f"Bearer {settings.MP_ACCESS_TOKEN}"}
-    r = requests.get(f"https://api.mercadopago.com/v1/payments/{payment_id}", headers=headers, timeout=30)
-    data = r.json() if r.content else {}
+    payment_data, mp_error = _mp_get_json(f"https://api.mercadopago.com/v1/payments/{payment_id}")
+    if mp_error:
+        return JsonResponse(
+            {"ok": True, "ignored": "payment_lookup_failed", "detail": mp_error},
+            status=200,
+        )
 
-    if r.status_code >= 400:
-        return JsonResponse({"ok": True, "ignored": "payment_lookup_failed", "detail": data}, status=200)
+    external_reference = payment_data.get("external_reference")
+    topup_id = _parse_positive_int(external_reference)
+    if not topup_id:
+        return JsonResponse({"ok": True, "ignored": "invalid_external_reference"}, status=200)
 
-    status = data.get("status")
-    external_reference = data.get("external_reference")  # topup_id
-    if not external_reference:
-        return JsonResponse({"ok": True, "ignored": "no_external_reference"}, status=200)
+    try:
+        topup = WalletTopup.objects.get(id=topup_id)
+    except WalletTopup.DoesNotExist:
+        return JsonResponse({"ok": True, "ignored": "topup_not_found"}, status=200)
 
-    # 3) acreditar si approved
-    if status == "approved":
-        with transaction.atomic():
-            try:
-                topup = WalletTopup.objects.select_for_update().get(id=int(external_reference))
-            except WalletTopup.DoesNotExist:
-                return JsonResponse({"ok": True, "ignored": "topup_not_found"}, status=200)
+    mapped_status = _map_mp_status_to_topup_status(payment_data.get("status"))
+    if mapped_status == WalletTopup.Status.APPROVED:
+        matches, reason = _payment_matches_topup(payment_data, topup)
+        if not matches:
+            return JsonResponse(
+                {"ok": True, "ignored": "payment_topup_mismatch", "reason": reason},
+                status=200,
+            )
 
-            # idempotencia
-            if topup.status != WalletTopup.Status.APPROVED:
-                wallet, _ = Wallet.objects.select_for_update().get_or_create(
-                    user=topup.user, defaults={"balance": 0}
-                )
+        _, credited = _approve_topup(
+            topup.id,
+            payment_id=payment_id,
+            reference_type="mp_payment",
+        )
+        return JsonResponse({"ok": True, "status": "APPROVED", "credited": credited}, status=200)
 
-                Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") + topup.credits)
+    if mapped_status:
+        synced_status = _sync_non_approved_topup_status(
+            topup.id,
+            target_status=mapped_status,
+            payment_id=payment_id,
+        )
+        return JsonResponse({"ok": True, "status": synced_status, "credited": False}, status=200)
 
-                LedgerEntry.objects.create(
-                    user=topup.user,
-                    kind=LedgerEntry.Kind.TOPUP,
-                    amount=int(topup.credits),
-                    reference_type="mp_payment",
-                    reference_id=str(payment_id),
-                )
-
-                topup.status = WalletTopup.Status.APPROVED
-                topup.approved_at = timezone.now()
-                topup.mp_payment_id = str(payment_id)
-                topup.save(update_fields=["status", "approved_at", "mp_payment_id"])
-
-    return JsonResponse({"ok": True}, status=200)
-
+    return JsonResponse({"ok": True, "ignored": "status_not_handled"}, status=200)
 
 
 @require_GET
 @token_required
 def topup_status(request, topup_id: int):
-    # 1) buscar topup del usuario
     try:
         topup = WalletTopup.objects.get(id=topup_id, user=request.user)
     except WalletTopup.DoesNotExist:
         return JsonResponse({"error": "topup_not_found"}, status=404)
 
-    # 2) si ya está aprobado -> listo
     if topup.status == WalletTopup.Status.APPROVED:
         return JsonResponse({"ok": True, "status": topup.status, "credited": True})
 
-    # 3) consultar MP por external_reference=topup.id
-    headers = {"Authorization": f"Bearer {settings.MP_ACCESS_TOKEN}"}
-    r = requests.get(
+    search_data, mp_error = _mp_get_json(
         "https://api.mercadopago.com/v1/payments/search",
-        headers=headers,
         params={"external_reference": str(topup.id)},
-        timeout=30,
     )
-    data = r.json() if r.content else {}
+    if mp_error:
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": topup.status,
+                "credited": False,
+                "mp_error": mp_error,
+            },
+            status=200,
+        )
 
-    results = data.get("results", []) or []
-    approved = next((p for p in results if p.get("status") == "approved"), None)
+    results = search_data.get("results", []) or []
+    selected_payment = _pick_relevant_payment(results)
+    if not selected_payment:
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": topup.status,
+                "credited": False,
+                "mp_found": 0,
+            },
+            status=200,
+        )
 
-    if not approved:
-        # todavía no aprobado (pending / no hay pago)
-        return JsonResponse({
+    payment_id = str(selected_payment.get("id") or "")
+    mapped_status = _map_mp_status_to_topup_status(selected_payment.get("status"))
+
+    if mapped_status == WalletTopup.Status.APPROVED:
+        payment_payload = selected_payment
+        if not selected_payment.get("transaction_amount") or not selected_payment.get("currency_id"):
+            payment_payload, mp_error = _mp_get_json(f"https://api.mercadopago.com/v1/payments/{payment_id}")
+            if mp_error:
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "status": topup.status,
+                        "credited": False,
+                        "mp_error": mp_error,
+                    },
+                    status=200,
+                )
+
+        matches, reason = _payment_matches_topup(payment_payload, topup)
+        if not matches:
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "status": topup.status,
+                    "credited": False,
+                    "error": "payment_topup_mismatch",
+                    "reason": reason,
+                    "mp_found": len(results),
+                },
+                status=200,
+            )
+
+        _, credited = _approve_topup(
+            topup.id,
+            payment_id=payment_id,
+            reference_type="mp_payment",
+        )
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": WalletTopup.Status.APPROVED,
+                "credited": True,
+                "payment_id": payment_id,
+                "already_credited": not credited,
+            },
+            status=200,
+        )
+
+    current_status = topup.status
+    if mapped_status:
+        current_status = _sync_non_approved_topup_status(
+            topup.id,
+            target_status=mapped_status,
+            payment_id=payment_id,
+        )
+
+    return JsonResponse(
+        {
             "ok": True,
-            "status": topup.status,
+            "status": current_status,
             "credited": False,
             "mp_found": len(results),
-        }, status=200)
-
-    payment_id = str(approved.get("id"))
-
-    # 4) acreditar idempotente
-    with transaction.atomic():
-        topup = WalletTopup.objects.select_for_update().get(id=topup.id)
-
-        if topup.status != WalletTopup.Status.APPROVED:
-            wallet, _ = Wallet.objects.select_for_update().get_or_create(
-                user=topup.user, defaults={"balance": 0}
-            )
-            Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") + topup.credits)
-
-            LedgerEntry.objects.create(
-                user=topup.user,
-                kind=LedgerEntry.Kind.TOPUP,
-                amount=int(topup.credits),
-                reference_type="mp_payment",
-                reference_id=payment_id,
-            )
-
-            topup.status = WalletTopup.Status.APPROVED
-            topup.approved_at = timezone.now()
-            topup.mp_payment_id = payment_id
-            topup.save(update_fields=["status", "approved_at", "mp_payment_id"])
-
-    return JsonResponse({
-        "ok": True,
-        "status": "APPROVED",
-        "credited": True,
-        "payment_id": payment_id,
-    }, status=200)
+        },
+        status=200,
+    )

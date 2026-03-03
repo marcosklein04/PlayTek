@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchCreditPacks, createWalletCheckout, CreditPack } from "@/api/wallet";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/api/client";
 
 export default function BuyCredits() {
   const { toast } = useToast();
@@ -49,18 +50,13 @@ export default function BuyCredits() {
       try {
         tries += 1;
 
-        const token = localStorage.getItem("access_token") || "";
-        const res = await fetch(
-          `http://127.0.0.1:8000/api/me/wallet/topups/${topupId}/status`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
+        const data = await apiFetch<{
+          credited: boolean;
+          status: string;
+        }>(
+          `/api/me/wallet/topups/${topupId}/status`,
+          { method: "GET" }
         );
-
-        const data = await res.json();
         if (cancelled) return;
 
         if (data.credited) {

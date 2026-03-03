@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Trivia Sparkle</title>
+  <desc id="desc">Logo TRIVIA Sparkle con gradientes azul y dorado sobre fondo oscuro.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111f3c" />
+      <stop offset="100%" stop-color="#17284d" />
+    </linearGradient>
+    <linearGradient id="goldBlue" x1="0%" y1="20%" x2="100%" y2="80%">
+      <stop offset="0%" stop-color="#f7bc42" />
+      <stop offset="45%" stop-color="#6aaecf" />
+      <stop offset="100%" stop-color="#2f80cc" />
+    </linearGradient>
+    <linearGradient id="blueOnly" x1="0%" y1="10%" x2="100%" y2="90%">
+      <stop offset="0%" stop-color="#6eb9dc" />
+      <stop offset="100%" stop-color="#2f78bf" />
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)" />
+  <g font-family="Montserrat, Arial, sans-serif" font-size="330" font-weight="800">
+    <text x="260" y="565" fill="url(#goldBlue)">T</text>
+    <text x="465" y="565" fill="url(#goldBlue)">R</text>
+    <text x="675" y="565" fill="url(#blueOnly)">i</text>
+    <text x="780" y="565" fill="url(#blueOnly)">V</text>
+    <text x="1060" y="565" fill="url(#blueOnly)">I</text>
+    <text x="1185" y="565" fill="url(#blueOnly)">A</text>
+  </g>
+  <circle cx="734" cy="332" r="36" fill="#f7bc1c" />
+</svg>
