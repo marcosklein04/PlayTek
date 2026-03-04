@@ -845,35 +845,7 @@ export default function ContractCustomization() {
                   </p>
                 </div>
 
-                <div className="rounded-md border border-border p-4 space-y-3">
-                  <h3 className="text-sm font-semibold">Importar CSV</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Columnas requeridas: question, option_1, option_2, correct_option (indice 1-based o texto exacto).
-                  </p>
-                  <Input
-                    type="file"
-                    accept=".csv,text/csv"
-                    disabled={csvUploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      setCsvFile(file);
-                    }}
-                  />
-                  <div className="flex items-center justify-between rounded-md border border-border p-3">
-                    <span className="text-sm">Reemplazar preguntas actuales</span>
-                    <Switch
-                      checked={csvReplaceExisting}
-                      onCheckedChange={(checked) => setCsvReplaceExisting(checked)}
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    disabled={csvUploading || !csvFile}
-                    onClick={() => void handleImportCsv()}
-                  >
-                    {csvUploading ? "Importando..." : "Importar CSV"}
-                  </Button>
-                </div>
+                
 
                 <div className="rounded-md border border-border p-4 space-y-4">
                   <h3 className="text-sm font-semibold">Carga por cantidad</h3>
