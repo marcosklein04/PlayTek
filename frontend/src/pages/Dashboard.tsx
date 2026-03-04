@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Gamepad2, TrendingUp, Calendar, ArrowRight, Sparkles, Play } from 'lucide-react';
@@ -12,6 +12,7 @@ import { fetchGames, previewGame } from '@/api/games';
 import { mapApiGameToGame } from '@/mappers/gameMapper';
 import { Game } from '@/types';
 import { useToast } from '@/hooks/use-toast';
+import { isGameAvailable } from '@/lib/gameAvailability';
 
 export default function Dashboard() {
   const { user, contractedGames, refreshContractedGames } = useAuth();
@@ -21,6 +22,14 @@ export default function Dashboard() {
   const [loadingGames, setLoadingGames] = useState(true);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [gameToContract, setGameToContract] = useState<Game | null>(null);
+
+  const notifyUnavailableGame = useCallback(() => {
+    toast({
+      title: 'Próximamente',
+      description: 'este juego no esta disponible',
+      variant: 'destructive',
+    });
+  }, [toast]);
 
   useEffect(() => {
     (async () => {
@@ -57,11 +66,20 @@ export default function Dashboard() {
 
   const handleOpenContract = (gameId: string) => {
     const game = games.find((item) => item.id === gameId) || null;
+    if (game && !isGameAvailable(game.id)) {
+      notifyUnavailableGame();
+      return;
+    }
     setGameToContract(game);
     setSelectedGame(null);
   };
 
   const handlePreviewGame = async (gameId: string) => {
+    if (!isGameAvailable(gameId)) {
+      notifyUnavailableGame();
+      return;
+    }
+
     try {
       const res = await previewGame(gameId);
       const runnerUrl = new URL(res.juego.runner_url, window.location.origin);
@@ -221,6 +239,8 @@ export default function Dashboard() {
                 onContract={handleOpenContract}
                 onViewDetails={setSelectedGame}
                 isContracted={contractedGames.some(cg => cg.id === game.id)}
+                isAvailable={isGameAvailable(game.id)}
+                onUnavailableClick={notifyUnavailableGame}
               />
             ))}
           </div>

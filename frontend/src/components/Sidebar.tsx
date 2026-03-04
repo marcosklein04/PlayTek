@@ -100,16 +100,29 @@ export function Sidebar() {
           <div
             className={cn(
               "rounded-lg border border-primary/20 bg-primary/5",
-              collapsed ? "px-2 py-3 flex flex-col items-center gap-2" : "px-4 py-3"
+              collapsed ? "px-2 py-3" : "px-4 py-3"
             )}
           >
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              <Coins className="w-4 h-4 text-primary" />
-              {!collapsed && <span>Créditos</span>}
+            <div
+              className={cn(
+                "flex items-center",
+                collapsed ? "justify-center gap-1 text-xs" : "gap-3",
+              )}
+            >
+              <Coins className={cn("text-primary", collapsed ? "w-4 h-4" : "w-5 h-5")} />
+              {!collapsed ? (
+                <>
+                  <span className="font-medium text-sidebar-foreground">Créditos</span>
+                  <span className="text-base font-semibold text-primary">
+                    {walletBalance === null ? "..." : walletBalance.toLocaleString("es-AR")}
+                  </span>
+                </>
+              ) : (
+                <span className="font-semibold text-primary">
+                  {walletBalance === null ? "..." : walletBalance.toLocaleString("es-AR")}
+                </span>
+              )}
             </div>
-            <p className={cn("font-semibold text-primary", collapsed ? "text-xs" : "text-lg")}>
-              {walletBalance === null ? "..." : walletBalance.toLocaleString("es-AR")}
-            </p>
           </div>
         </div>
 

@@ -10,9 +10,19 @@ interface GameCardProps {
   onViewDetails: (game: Game) => void;
   isContracted?: boolean;
   index?: number;
+  isAvailable?: boolean;
+  onUnavailableClick?: (game: Game) => void;
 }
 
-export function GameCard({ game, onContract, onViewDetails, isContracted, index = 0 }: GameCardProps) {
+export function GameCard({
+  game,
+  onContract,
+  onViewDetails,
+  isContracted,
+  index = 0,
+  isAvailable = true,
+  onUnavailableClick,
+}: GameCardProps) {
   const formatPrice = (pricing: Game['pricing']) => {
     if (typeof game.creditsCost === "number" && Number.isFinite(game.creditsCost) && game.creditsCost > 0) {
       return `${game.creditsCost} créditos`;
@@ -23,6 +33,26 @@ export function GameCard({ game, onContract, onViewDetails, isContracted, index 
       event: '/evento',
     };
     return `$${pricing.price} ${pricing.period ? periodMap[pricing.period] : ''}`;
+  };
+
+  const handleUnavailable = () => {
+    onUnavailableClick?.(game);
+  };
+
+  const handleViewDetails = () => {
+    if (!isAvailable) {
+      handleUnavailable();
+      return;
+    }
+    onViewDetails(game);
+  };
+
+  const handleContract = () => {
+    if (!isAvailable) {
+      handleUnavailable();
+      return;
+    }
+    onContract && onContract(game.id);
   };
 
   return (
@@ -37,9 +67,20 @@ export function GameCard({ game, onContract, onViewDetails, isContracted, index 
         <img
           src={game.image}
           alt={game.name}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          className={`w-full h-full object-cover transition-transform duration-500 ${isAvailable ? "group-hover:scale-110" : "opacity-65"}`}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+
+        {!isAvailable && (
+          <div
+            className="absolute inset-0 z-20 flex cursor-not-allowed items-center justify-center bg-background/65 backdrop-blur-[2px]"
+            onClick={handleUnavailable}
+          >
+            <div className="rounded-full border border-primary/40 bg-background/80 px-5 py-2 text-sm font-semibold uppercase tracking-wide text-primary">
+              Proximamente
+            </div>
+          </div>
+        )}
         
         {/* Badges */}
         <div className="absolute top-3 left-3 flex gap-2">
@@ -66,7 +107,7 @@ export function GameCard({ game, onContract, onViewDetails, isContracted, index 
             variant="glow" 
             size="lg" 
             className="rounded-full"
-            onClick={() => onViewDetails(game)}
+            onClick={handleViewDetails}
           >
             <Play className="w-5 h-5" />
             Ver detalles
@@ -107,18 +148,18 @@ export function GameCard({ game, onContract, onViewDetails, isContracted, index 
             variant="glass" 
             size="sm" 
             className="flex-1"
-            onClick={() => onViewDetails(game)}
+            onClick={handleViewDetails}
           >
-            Detalles
+            {isAvailable ? "Detalles" : "Proximamente"}
           </Button>
           <Button
-            variant={isContracted ? "secondary" : "glow"}
+            variant={!isAvailable ? "outline" : isContracted ? "secondary" : "glow"}
             size="sm"
             className="flex-1"
-            onClick={() => onContract && onContract(game.id)}
-            disabled={!onContract}
+            onClick={handleContract}
+            disabled={isAvailable ? !onContract : false}
           >
-            Contratar
+            {isAvailable ? "Contratar" : "No disponible"}
           </Button>
         </div>
       </div>

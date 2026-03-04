@@ -27,7 +27,12 @@ type TriviaQuestionForm = {
   choices: Array<{ text: string; is_correct: boolean }>;
 };
 
+type BulkTriviaQuestionForm = TriviaQuestionForm & {
+  questionId: number | null;
+};
+
 const MAX_FORM_CHOICES = 6;
+const MAX_BULK_QUESTIONS = 50;
 
 function buildEmptyQuestionForm(): TriviaQuestionForm {
   return {
@@ -55,6 +60,21 @@ function questionToForm(question: ContractTriviaQuestion): TriviaQuestionForm {
   };
 }
 
+function buildBulkQuestionForm(question?: ContractTriviaQuestion): BulkTriviaQuestionForm {
+  if (!question) {
+    return { questionId: null, ...buildEmptyQuestionForm() };
+  }
+  return {
+    questionId: question.id,
+    ...questionToForm(question),
+  };
+}
+
+function buildBulkQuestionForms(count: number, sourceQuestions: ContractTriviaQuestion[]): BulkTriviaQuestionForm[] {
+  const safeCount = Math.max(1, Math.min(MAX_BULK_QUESTIONS, count));
+  return Array.from({ length: safeCount }, (_, index) => buildBulkQuestionForm(sourceQuestions[index]));
+}
+
 export default function ContractCustomization() {
   const { id } = useParams<{ id: string }>();
   const contractId = Number(id);
@@ -74,15 +94,20 @@ export default function ContractCustomization() {
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
   const [questionSetId, setQuestionSetId] = useState<number | null>(null);
   const [questionForm, setQuestionForm] = useState<TriviaQuestionForm>(buildEmptyQuestionForm());
+  const [bulkQuestionCount, setBulkQuestionCount] = useState("1");
+  const [bulkQuestionForms, setBulkQuestionForms] = useState<BulkTriviaQuestionForm[]>([buildBulkQuestionForm()]);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvReplaceExisting, setCsvReplaceExisting] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
-  const supportsTriviaQuestions = gameSlug === "trivia-sparkle";
-  const isTriviaSparkle = gameSlug === "trivia-sparkle";
+  const normalizedGameSlug = gameSlug.trim().toLowerCase();
+  const isTriviaSparkle = normalizedGameSlug === "trivia-sparkle";
+  const supportsTriviaQuestions = normalizedGameSlug.includes("trivia");
+  const supportsAdvancedCustomization = isTriviaSparkle;
 
   const disabled = useMemo(
-    () => !config || saving || starting || uploadingAsset !== null || questionsSaving || csvUploading,
-    [config, saving, starting, uploadingAsset, questionsSaving, csvUploading],
+    () => !config || saving || starting || uploadingAsset !== null || questionsSaving || bulkSaving || csvUploading,
+    [config, saving, starting, uploadingAsset, questionsSaving, bulkSaving, csvUploading],
   );
   const watermarkOpacityLabel = useMemo(() => {
     if (!config) return "0.00";
@@ -113,14 +138,24 @@ export default function ContractCustomization() {
   }, [contractId, validId, navigate, toast]);
 
   useEffect(() => {
-    if (!validId || !supportsTriviaQuestions) return;
+    if (!validId || !supportsTriviaQuestions) {
+      setQuestions([]);
+      setQuestionSetId(null);
+      setBulkQuestionCount("1");
+      setBulkQuestionForms([buildBulkQuestionForm()]);
+      return;
+    }
 
     (async () => {
       try {
         setQuestionsLoading(true);
         const res = await fetchContractTriviaQuestions(contractId);
-        setQuestions(res.questions || []);
+        const nextQuestions = res.questions || [];
+        setQuestions(nextQuestions);
         setQuestionSetId(res.question_set_id ?? null);
+        const initialCount = Math.max(1, nextQuestions.length);
+        setBulkQuestionCount(String(initialCount));
+        setBulkQuestionForms(buildBulkQuestionForms(initialCount, nextQuestions));
       } catch (error) {
         const message = error instanceof Error ? error.message : "No se pudieron cargar las preguntas";
         toast({ title: "Error", description: message, variant: "destructive" });
@@ -207,6 +242,190 @@ export default function ContractCustomization() {
     });
   };
 
+  const syncBulkFromQuestions = (sourceQuestions: ContractTriviaQuestion[]) => {
+    const nextCount = Math.max(1, sourceQuestions.length);
+    setBulkQuestionCount(String(nextCount));
+    setBulkQuestionForms(buildBulkQuestionForms(nextCount, sourceQuestions));
+  };
+
+  const handleApplyBulkQuestionCount = () => {
+    const parsed = Number.parseInt(bulkQuestionCount, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      toast({
+        title: "Cantidad inválida",
+        description: "Ingresa un número mayor o igual a 1.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const bounded = Math.min(MAX_BULK_QUESTIONS, parsed);
+    if (bounded !== parsed) {
+      toast({
+        title: "Cantidad ajustada",
+        description: `Máximo permitido: ${MAX_BULK_QUESTIONS} preguntas.`,
+      });
+    }
+
+    setBulkQuestionCount(String(bounded));
+    setBulkQuestionForms(buildBulkQuestionForms(bounded, questions));
+  };
+
+  const updateBulkQuestionText = (questionIndex: number, value: string) => {
+    setBulkQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]) return prev;
+      next[questionIndex].text = value;
+      return next;
+    });
+  };
+
+  const updateBulkChoiceText = (questionIndex: number, choiceIndex: number, value: string) => {
+    setBulkQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]?.choices[choiceIndex]) return prev;
+      next[questionIndex].choices[choiceIndex].text = value;
+      return next;
+    });
+  };
+
+  const setBulkCorrectChoice = (questionIndex: number, choiceIndex: number) => {
+    setBulkQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      const question = next[questionIndex];
+      if (!question) return prev;
+      question.choices = question.choices.map((choice, index) => ({
+        ...choice,
+        is_correct: index === choiceIndex,
+      }));
+      return next;
+    });
+  };
+
+  const addBulkChoiceField = (questionIndex: number) => {
+    setBulkQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      const question = next[questionIndex];
+      if (!question || question.choices.length >= MAX_FORM_CHOICES) return prev;
+      question.choices.push({ text: "", is_correct: false });
+      return next;
+    });
+  };
+
+  const removeBulkChoiceField = (questionIndex: number, choiceIndex: number) => {
+    setBulkQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      const question = next[questionIndex];
+      if (!question || question.choices.length <= 2) return prev;
+      const nextChoices = question.choices.filter((_, index) => index !== choiceIndex);
+      if (!nextChoices.some((choice) => choice.is_correct)) {
+        nextChoices[0].is_correct = true;
+      }
+      question.choices = nextChoices;
+      return next;
+    });
+  };
+
+  const handleSaveAllQuestions = async () => {
+    if (!validId) return;
+    if (bulkQuestionForms.length === 0) {
+      toast({
+        title: "Sin preguntas",
+        description: "Primero define cuántas preguntas vas a cargar.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const normalizedPayload = [];
+    for (let index = 0; index < bulkQuestionForms.length; index += 1) {
+      const form = bulkQuestionForms[index];
+      const text = form.text.trim();
+      const choices = form.choices
+        .map((choice) => ({ ...choice, text: choice.text.trim() }))
+        .filter((choice) => choice.text.length > 0);
+
+      if (!text) {
+        toast({
+          title: "Pregunta incompleta",
+          description: `Completa el texto en la pregunta ${index + 1}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (choices.length < 2) {
+        toast({
+          title: "Opciones insuficientes",
+          description: `La pregunta ${index + 1} necesita al menos 2 opciones.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const correctCount = choices.filter((choice) => choice.is_correct).length;
+      if (correctCount !== 1) {
+        toast({
+          title: "Respuesta correcta inválida",
+          description: `La pregunta ${index + 1} debe tener exactamente una respuesta correcta.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      normalizedPayload.push({
+        questionId: form.questionId,
+        text,
+        choices,
+      });
+    }
+
+    try {
+      setBulkSaving(true);
+      const savedQuestions: ContractTriviaQuestion[] = [];
+      let nextQuestionSetId = questionSetId;
+
+      for (const item of normalizedPayload) {
+        if (item.questionId) {
+          const res = await updateContractTriviaQuestion(contractId, item.questionId, {
+            text: item.text,
+            choices: item.choices,
+          });
+          savedQuestions.push(res.question);
+          nextQuestionSetId = res.question_set_id ?? nextQuestionSetId;
+        } else {
+          const res = await createContractTriviaQuestion(contractId, {
+            text: item.text,
+            choices: item.choices,
+          });
+          savedQuestions.push(res.question);
+          nextQuestionSetId = res.question_set_id ?? nextQuestionSetId;
+        }
+      }
+
+      const savedIds = new Set(savedQuestions.map((question) => question.id));
+      const staleQuestions = questions.filter((question) => !savedIds.has(question.id));
+      for (const staleQuestion of staleQuestions) {
+        await deleteContractTriviaQuestion(contractId, staleQuestion.id);
+      }
+
+      setQuestions(savedQuestions);
+      setQuestionSetId(nextQuestionSetId ?? null);
+      setBulkQuestionForms(savedQuestions.map((question) => buildBulkQuestionForm(question)));
+      setBulkQuestionCount(String(savedQuestions.length));
+      setEditingQuestionId(null);
+      setQuestionForm(buildEmptyQuestionForm());
+
+      toast({
+        title: "Preguntas guardadas",
+        description: `Se guardaron ${savedQuestions.length} preguntas correctamente.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron guardar todas las preguntas";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!config || !validId) return;
     try {
@@ -255,11 +474,15 @@ export default function ContractCustomization() {
       setQuestionsSaving(true);
       if (editingQuestionId) {
         const res = await updateContractTriviaQuestion(contractId, editingQuestionId, { text, choices });
-        setQuestions((prev) => prev.map((question) => (question.id === editingQuestionId ? res.question : question)));
+        const nextQuestions = questions.map((question) => (question.id === editingQuestionId ? res.question : question));
+        setQuestions(nextQuestions);
+        syncBulkFromQuestions(nextQuestions);
         toast({ title: "Pregunta actualizada", description: "Cambios guardados correctamente." });
       } else {
         const res = await createContractTriviaQuestion(contractId, { text, choices });
-        setQuestions((prev) => [...prev, res.question]);
+        const nextQuestions = [...questions, res.question];
+        setQuestions(nextQuestions);
+        syncBulkFromQuestions(nextQuestions);
         setQuestionSetId(res.question_set_id);
         toast({ title: "Pregunta creada", description: "Se agrego al contrato." });
       }
@@ -289,7 +512,9 @@ export default function ContractCustomization() {
     try {
       setQuestionsSaving(true);
       await deleteContractTriviaQuestion(contractId, questionId);
-      setQuestions((prev) => prev.filter((question) => question.id !== questionId));
+      const nextQuestions = questions.filter((question) => question.id !== questionId);
+      setQuestions(nextQuestions);
+      syncBulkFromQuestions(nextQuestions);
       if (editingQuestionId === questionId) {
         handleCancelEditQuestion();
       }
@@ -315,8 +540,10 @@ export default function ContractCustomization() {
     try {
       setCsvUploading(true);
       const res = await importContractTriviaCsv(contractId, csvFile, csvReplaceExisting);
-      setQuestions(res.questions || []);
+      const nextQuestions = res.questions || [];
+      setQuestions(nextQuestions);
       setQuestionSetId(res.question_set_id);
+      syncBulkFromQuestions(nextQuestions);
       setCsvFile(null);
       toast({
         title: "CSV importado",
@@ -409,201 +636,207 @@ export default function ContractCustomization() {
 
         {!loading && config && (
           <div className="space-y-6">
-            <section className="glass-card p-5">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">Branding</h2>
-                {isTriviaSparkle && (
-                  <Button variant="secondary" size="sm" onClick={applyPlayteckPalette}>
-                    Aplicar paleta Playteck
-                  </Button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-muted-foreground">Color primario</label>
-                  <Input
-                    value={config.branding.primary_color}
-                    onChange={(e) => updateField(["branding", "primary_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Color secundario</label>
-                  <Input
-                    value={config.branding.secondary_color}
-                    onChange={(e) => updateField(["branding", "secondary_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Logo URL</label>
-                  <Input
-                    value={config.branding.logo_url}
-                    onChange={(e) => updateField(["branding", "logo_url"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Background URL</label>
-                  <Input
-                    value={config.branding.background_url}
-                    onChange={(e) => updateField(["branding", "background_url"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Imagen bienvenida URL</label>
-                  <Input
-                    value={config.branding.welcome_image_url}
-                    onChange={(e) => updateField(["branding", "welcome_image_url"], e.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm text-muted-foreground">Texto de watermark (modo prueba)</label>
-                  <Input
-                    value={config.branding.watermark_text}
-                    onChange={(e) => updateField(["branding", "watermark_text"], e.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className="glass-card p-5">
-              <h2 className="text-lg font-semibold mb-2">Assets del Contrato</h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                Sube imagenes para logo, portada y fondos. Se guardan directo en este contrato.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-md border border-border p-3 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium">Logo</p>
-                    <p className="text-xs text-muted-foreground">Formato recomendado: PNG transparente.</p>
+            {supportsAdvancedCustomization && (
+              <>
+                <section className="glass-card p-5">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-lg font-semibold">Branding</h2>
+                    {isTriviaSparkle && (
+                      <Button variant="secondary" size="sm" onClick={applyPlayteckPalette}>
+                        Aplicar paleta Playteck
+                      </Button>
+                    )}
                   </div>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    disabled={uploadingAsset === "logo"}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      void handleUploadAsset("logo", file);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                  {config.branding.logo_url && (
-                    <img
-                      src={config.branding.logo_url}
-                      alt="Logo contrato"
-                      className="h-24 w-full rounded-md border border-border object-contain bg-muted/20"
-                    />
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!config.branding.logo_url || uploadingAsset === "logo"}
-                    onClick={() => void handleDeleteAsset("logo")}
-                  >
-                    {uploadingAsset === "logo" ? "Procesando..." : "Eliminar logo"}
-                  </Button>
-                </div>
-
-                <div className="rounded-md border border-border p-3 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium">Imagen de bienvenida</p>
-                    <p className="text-xs text-muted-foreground">Se usa en la cabecera del runner.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-muted-foreground">Color primario</label>
+                      <Input
+                        value={config.branding.primary_color}
+                        onChange={(e) => updateField(["branding", "primary_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Color secundario</label>
+                      <Input
+                        value={config.branding.secondary_color}
+                        onChange={(e) => updateField(["branding", "secondary_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Logo URL</label>
+                      <Input
+                        value={config.branding.logo_url}
+                        onChange={(e) => updateField(["branding", "logo_url"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Background URL</label>
+                      <Input
+                        value={config.branding.background_url}
+                        onChange={(e) => updateField(["branding", "background_url"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Imagen bienvenida URL</label>
+                      <Input
+                        value={config.branding.welcome_image_url}
+                        onChange={(e) => updateField(["branding", "welcome_image_url"], e.target.value)}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm text-muted-foreground">Texto de watermark (modo prueba)</label>
+                      <Input
+                        value={config.branding.watermark_text}
+                        onChange={(e) => updateField(["branding", "watermark_text"], e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    disabled={uploadingAsset === "welcome_image"}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      void handleUploadAsset("welcome_image", file);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                  {config.branding.welcome_image_url && (
-                    <img
-                      src={config.branding.welcome_image_url}
-                      alt="Welcome contrato"
-                      className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
-                    />
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!config.branding.welcome_image_url || uploadingAsset === "welcome_image"}
-                    onClick={() => void handleDeleteAsset("welcome_image")}
-                  >
-                    {uploadingAsset === "welcome_image" ? "Procesando..." : "Eliminar imagen"}
-                  </Button>
-                </div>
+                </section>
 
-                <div className="rounded-md border border-border p-3 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium">Fondo principal</p>
-                    <p className="text-xs text-muted-foreground">Se aplica al fondo de pantalla del juego.</p>
-                  </div>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    disabled={uploadingAsset === "background"}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      void handleUploadAsset("background", file);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                  {config.branding.background_url && (
-                    <img
-                      src={config.branding.background_url}
-                      alt="Background contrato"
-                      className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
-                    />
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!config.branding.background_url || uploadingAsset === "background"}
-                    onClick={() => void handleDeleteAsset("background")}
-                  >
-                    {uploadingAsset === "background" ? "Procesando..." : "Eliminar fondo"}
-                  </Button>
-                </div>
+                <section className="glass-card p-5">
+                  <h2 className="text-lg font-semibold mb-2">Assets del Contrato</h2>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Sube imagenes para logo, portada y fondos. Se guardan directo en este contrato.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-md border border-border p-3 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">Logo</p>
+                        <p className="text-xs text-muted-foreground">Formato recomendado: PNG transparente.</p>
+                      </div>
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingAsset === "logo"}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          void handleUploadAsset("logo", file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      {config.branding.logo_url && (
+                        <img
+                          src={config.branding.logo_url}
+                          alt="Logo contrato"
+                          className="h-24 w-full rounded-md border border-border object-contain bg-muted/20"
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!config.branding.logo_url || uploadingAsset === "logo"}
+                        onClick={() => void handleDeleteAsset("logo")}
+                      >
+                        {uploadingAsset === "logo" ? "Procesando..." : "Eliminar logo"}
+                      </Button>
+                    </div>
 
-                <div className="rounded-md border border-border p-3 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium">Fondo de contenedor</p>
-                    <p className="text-xs text-muted-foreground">Se aplica a la tarjeta de pregunta.</p>
+                    <div className="rounded-md border border-border p-3 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">Imagen de bienvenida</p>
+                        <p className="text-xs text-muted-foreground">Se usa en la cabecera del runner.</p>
+                      </div>
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingAsset === "welcome_image"}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          void handleUploadAsset("welcome_image", file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      {config.branding.welcome_image_url && (
+                        <img
+                          src={config.branding.welcome_image_url}
+                          alt="Welcome contrato"
+                          className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!config.branding.welcome_image_url || uploadingAsset === "welcome_image"}
+                        onClick={() => void handleDeleteAsset("welcome_image")}
+                      >
+                        {uploadingAsset === "welcome_image" ? "Procesando..." : "Eliminar imagen"}
+                      </Button>
+                    </div>
+
+                    <div className="rounded-md border border-border p-3 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">Fondo principal</p>
+                        <p className="text-xs text-muted-foreground">Se aplica al fondo de pantalla del juego.</p>
+                      </div>
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingAsset === "background"}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          void handleUploadAsset("background", file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      {config.branding.background_url && (
+                        <img
+                          src={config.branding.background_url}
+                          alt="Background contrato"
+                          className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!config.branding.background_url || uploadingAsset === "background"}
+                        onClick={() => void handleDeleteAsset("background")}
+                      >
+                        {uploadingAsset === "background" ? "Procesando..." : "Eliminar fondo"}
+                      </Button>
+                    </div>
+
+                    <div className="rounded-md border border-border p-3 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">Fondo de contenedor</p>
+                        <p className="text-xs text-muted-foreground">Se aplica a la tarjeta de pregunta.</p>
+                      </div>
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingAsset === "container_background"}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          void handleUploadAsset("container_background", file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      {config.visual.container_bg_image_url && (
+                        <img
+                          src={config.visual.container_bg_image_url}
+                          alt="Container background contrato"
+                          className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!config.visual.container_bg_image_url || uploadingAsset === "container_background"}
+                        onClick={() => void handleDeleteAsset("container_background")}
+                      >
+                        {uploadingAsset === "container_background" ? "Procesando..." : "Eliminar fondo"}
+                      </Button>
+                    </div>
                   </div>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    disabled={uploadingAsset === "container_background"}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      void handleUploadAsset("container_background", file);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                  {config.visual.container_bg_image_url && (
-                    <img
-                      src={config.visual.container_bg_image_url}
-                      alt="Container background contrato"
-                      className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
-                    />
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!config.visual.container_bg_image_url || uploadingAsset === "container_background"}
-                    onClick={() => void handleDeleteAsset("container_background")}
-                  >
-                    {uploadingAsset === "container_background" ? "Procesando..." : "Eliminar fondo"}
-                  </Button>
-                </div>
-              </div>
-            </section>
+                </section>
+              </>
+            )}
 
             {supportsTriviaQuestions && (
               <section className="glass-card p-5 space-y-5">
                 <div>
-                  <h2 className="text-lg font-semibold">Preguntas de Trivia Sparkle</h2>
+                  <h2 className="text-lg font-semibold">
+                    {isTriviaSparkle ? "Preguntas de Trivia Sparkle" : "Preguntas de Trivia"}
+                  </h2>
                   <p className="text-sm text-muted-foreground mt-1">
                     Crea y edita las preguntas especificas de este contrato.
                   </p>
@@ -640,6 +873,87 @@ export default function ContractCustomization() {
                   >
                     {csvUploading ? "Importando..." : "Importar CSV"}
                   </Button>
+                </div>
+
+                <div className="rounded-md border border-border p-4 space-y-4">
+                  <h3 className="text-sm font-semibold">Carga por cantidad</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Define cuántas preguntas tendrá la partida y completa cada una con sus opciones.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 items-end">
+                    <div>
+                      <label className="text-sm text-muted-foreground">Cantidad de preguntas</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={MAX_BULK_QUESTIONS}
+                        value={bulkQuestionCount}
+                        onChange={(e) => setBulkQuestionCount(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={handleApplyBulkQuestionCount}>
+                        Generar formularios
+                      </Button>
+                      <Button
+                        variant="hero"
+                        disabled={bulkSaving || questionsSaving || bulkQuestionForms.length === 0}
+                        onClick={() => void handleSaveAllQuestions()}
+                      >
+                        {bulkSaving ? "Guardando..." : "Guardar todas"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {bulkQuestionForms.length > 0 && (
+                    <div className="space-y-4">
+                      {bulkQuestionForms.map((form, questionIndex) => (
+                        <div key={`bulk-question-${questionIndex}`} className="rounded-md border border-border p-4 space-y-3">
+                          <p className="text-sm font-semibold">
+                            Pregunta {questionIndex + 1}
+                          </p>
+                          <Input
+                            value={form.text}
+                            onChange={(e) => updateBulkQuestionText(questionIndex, e.target.value)}
+                            placeholder={`Escribe la pregunta ${questionIndex + 1}...`}
+                          />
+                          <div className="space-y-2">
+                            {form.choices.map((choice, choiceIndex) => (
+                              <div key={`bulk-choice-${questionIndex}-${choiceIndex}`} className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name={`bulk-correct-choice-${questionIndex}`}
+                                  checked={choice.is_correct}
+                                  onChange={() => setBulkCorrectChoice(questionIndex, choiceIndex)}
+                                />
+                                <Input
+                                  value={choice.text}
+                                  onChange={(e) => updateBulkChoiceText(questionIndex, choiceIndex, e.target.value)}
+                                  placeholder={`Opcion ${choiceIndex + 1}`}
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={form.choices.length <= 2}
+                                  onClick={() => removeBulkChoiceField(questionIndex, choiceIndex)}
+                                >
+                                  Quitar
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={form.choices.length >= MAX_FORM_CHOICES}
+                            onClick={() => addBulkChoiceField(questionIndex)}
+                          >
+                            Agregar opcion
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-md border border-border p-4 space-y-4">
@@ -739,216 +1053,218 @@ export default function ContractCustomization() {
               </section>
             )}
 
-            <section className="glass-card p-5">
-              <h2 className="text-lg font-semibold mb-4">Textos</h2>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="text-sm text-muted-foreground">Titulo de bienvenida</label>
-                  <Input
-                    value={config.texts.welcome_title}
-                    onChange={(e) => updateField(["texts", "welcome_title"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Subtitulo</label>
-                  <Input
-                    value={config.texts.welcome_subtitle}
-                    onChange={(e) => updateField(["texts", "welcome_subtitle"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Texto boton CTA</label>
-                  <Input
-                    value={config.texts.cta_button}
-                    onChange={(e) => updateField(["texts", "cta_button"], e.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
+            {supportsAdvancedCustomization && (
+              <>
+                <section className="glass-card p-5">
+                  <h2 className="text-lg font-semibold mb-4">Textos</h2>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-sm text-muted-foreground">Titulo de bienvenida</label>
+                      <Input
+                        value={config.texts.welcome_title}
+                        onChange={(e) => updateField(["texts", "welcome_title"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Subtitulo</label>
+                      <Input
+                        value={config.texts.welcome_subtitle}
+                        onChange={(e) => updateField(["texts", "welcome_subtitle"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Texto boton CTA</label>
+                      <Input
+                        value={config.texts.cta_button}
+                        onChange={(e) => updateField(["texts", "cta_button"], e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </section>
 
-            <section className="glass-card p-5">
-              <h2 className="text-lg font-semibold mb-4">Reglas de Trivia</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between rounded-md border border-border p-3">
-                  <span className="text-sm">Mostrar timer</span>
-                  <Switch
-                    checked={config.rules.show_timer}
-                    onCheckedChange={(checked) => updateField(["rules", "show_timer"], checked)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Segundos por pregunta</label>
-                  <Input
-                    type="number"
-                    min={5}
-                    value={config.rules.timer_seconds}
-                    onChange={(e) => updateField(["rules", "timer_seconds"], Number(e.target.value || 0))}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Puntos por respuesta correcta</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={config.rules.points_per_correct}
-                    onChange={(e) => updateField(["rules", "points_per_correct"], Number(e.target.value || 0))}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Cantidad maxima de preguntas</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={config.rules.max_questions}
-                    onChange={(e) => updateField(["rules", "max_questions"], Number(e.target.value || 0))}
-                  />
-                </div>
-                <div className="flex items-center justify-between rounded-md border border-border p-3">
-                  <span className="text-sm">Usar vidas</span>
-                  <Switch
-                    checked={config.rules.use_lives}
-                    onCheckedChange={(checked) => updateField(["rules", "use_lives"], checked)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Cantidad de vidas</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={10}
-                    disabled={!config.rules.use_lives}
-                    value={config.rules.lives}
-                    onChange={(e) => updateField(["rules", "lives"], Number(e.target.value || 0))}
-                  />
-                </div>
-              </div>
-            </section>
+                <section className="glass-card p-5">
+                  <h2 className="text-lg font-semibold mb-4">Reglas de Trivia</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between rounded-md border border-border p-3">
+                      <span className="text-sm">Mostrar timer</span>
+                      <Switch
+                        checked={config.rules.show_timer}
+                        onCheckedChange={(checked) => updateField(["rules", "show_timer"], checked)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Segundos por pregunta</label>
+                      <Input
+                        type="number"
+                        min={5}
+                        value={config.rules.timer_seconds}
+                        onChange={(e) => updateField(["rules", "timer_seconds"], Number(e.target.value || 0))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Puntos por respuesta correcta</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={config.rules.points_per_correct}
+                        onChange={(e) => updateField(["rules", "points_per_correct"], Number(e.target.value || 0))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Cantidad maxima de preguntas</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={config.rules.max_questions}
+                        onChange={(e) => updateField(["rules", "max_questions"], Number(e.target.value || 0))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border border-border p-3">
+                      <span className="text-sm">Usar vidas</span>
+                      <Switch
+                        checked={config.rules.use_lives}
+                        onCheckedChange={(checked) => updateField(["rules", "use_lives"], checked)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Cantidad de vidas</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={10}
+                        disabled={!config.rules.use_lives}
+                        value={config.rules.lives}
+                        onChange={(e) => updateField(["rules", "lives"], Number(e.target.value || 0))}
+                      />
+                    </div>
+                  </div>
+                </section>
 
-            <section className="glass-card p-5">
-              <h2 className="text-lg font-semibold mb-4">Visual de Preguntas</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-muted-foreground">Fondo de pantalla</label>
-                  <Input
-                    type="color"
-                    value={config.visual.screen_background_color}
-                    onChange={(e) => updateField(["visual", "screen_background_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Fondo de pregunta</label>
-                  <Input
-                    type="color"
-                    value={config.visual.question_bg_color}
-                    onChange={(e) => updateField(["visual", "question_bg_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Borde de pregunta</label>
-                  <Input
-                    type="color"
-                    value={config.visual.question_border_color}
-                    onChange={(e) => updateField(["visual", "question_border_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Texto de pregunta</label>
-                  <Input
-                    type="color"
-                    value={config.visual.question_text_color}
-                    onChange={(e) => updateField(["visual", "question_text_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Fondo de opciones</label>
-                  <Input
-                    type="color"
-                    value={config.visual.option_bg_color}
-                    onChange={(e) => updateField(["visual", "option_bg_color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Borde de opciones</label>
-                  <Input
-                    type="color"
-                    value={config.visual.option_border_color}
-                    onChange={(e) => updateField(["visual", "option_border_color"], e.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm text-muted-foreground">Fuente de pregunta</label>
-                  <Input
-                    value={config.visual.question_font_family}
-                    onChange={(e) => updateField(["visual", "question_font_family"], e.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm text-muted-foreground">Imagen fondo del contenedor URL</label>
-                  <Input
-                    value={config.visual.container_bg_image_url}
-                    onChange={(e) => updateField(["visual", "container_bg_image_url"], e.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
+                <section className="glass-card p-5">
+                  <h2 className="text-lg font-semibold mb-4">Visual de Preguntas</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-muted-foreground">Fondo de pantalla</label>
+                      <Input
+                        type="color"
+                        value={config.visual.screen_background_color}
+                        onChange={(e) => updateField(["visual", "screen_background_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Fondo de pregunta</label>
+                      <Input
+                        type="color"
+                        value={config.visual.question_bg_color}
+                        onChange={(e) => updateField(["visual", "question_bg_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Borde de pregunta</label>
+                      <Input
+                        type="color"
+                        value={config.visual.question_border_color}
+                        onChange={(e) => updateField(["visual", "question_border_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Texto de pregunta</label>
+                      <Input
+                        type="color"
+                        value={config.visual.question_text_color}
+                        onChange={(e) => updateField(["visual", "question_text_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Fondo de opciones</label>
+                      <Input
+                        type="color"
+                        value={config.visual.option_bg_color}
+                        onChange={(e) => updateField(["visual", "option_bg_color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Borde de opciones</label>
+                      <Input
+                        type="color"
+                        value={config.visual.option_border_color}
+                        onChange={(e) => updateField(["visual", "option_border_color"], e.target.value)}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm text-muted-foreground">Fuente de pregunta</label>
+                      <Input
+                        value={config.visual.question_font_family}
+                        onChange={(e) => updateField(["visual", "question_font_family"], e.target.value)}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm text-muted-foreground">Imagen fondo del contenedor URL</label>
+                      <Input
+                        value={config.visual.container_bg_image_url}
+                        onChange={(e) => updateField(["visual", "container_bg_image_url"], e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </section>
 
-            <section className="glass-card p-5">
-              <h2 className="text-lg font-semibold mb-4">Watermark de Preview</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between rounded-md border border-border p-3">
-                  <span className="text-sm">Mostrar watermark</span>
-                  <Switch
-                    checked={config.watermark.enabled}
-                    onCheckedChange={(checked) => updateField(["watermark", "enabled"], checked)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Color</label>
-                  <Input
-                    type="color"
-                    value={config.watermark.color}
-                    onChange={(e) => updateField(["watermark", "color"], e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">
-                    Opacidad ({watermarkOpacityLabel})
-                  </label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={config.watermark.opacity}
-                    onChange={(e) => updateField(["watermark", "opacity"], Number(e.target.value || 0))}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Posicion</label>
-                  <select
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    value={config.watermark.position}
-                    onChange={(e) => updateField(["watermark", "position"], e.target.value)}
-                  >
-                    <option value="top-left">Arriba izquierda</option>
-                    <option value="top-right">Arriba derecha</option>
-                    <option value="bottom-left">Abajo izquierda</option>
-                    <option value="bottom-right">Abajo derecha</option>
-                    <option value="center">Centro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Tamano fuente</label>
-                  <Input
-                    type="number"
-                    min={12}
-                    max={200}
-                    value={config.watermark.font_size}
-                    onChange={(e) => updateField(["watermark", "font_size"], Number(e.target.value || 0))}
-                  />
-                </div>
-              </div>
-            </section>
+                <section className="glass-card p-5">
+                  <h2 className="text-lg font-semibold mb-4">Watermark de Preview</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between rounded-md border border-border p-3">
+                      <span className="text-sm">Mostrar watermark</span>
+                      <Switch
+                        checked={config.watermark.enabled}
+                        onCheckedChange={(checked) => updateField(["watermark", "enabled"], checked)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Color</label>
+                      <Input
+                        type="color"
+                        value={config.watermark.color}
+                        onChange={(e) => updateField(["watermark", "color"], e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Opacidad ({watermarkOpacityLabel})</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={config.watermark.opacity}
+                        onChange={(e) => updateField(["watermark", "opacity"], Number(e.target.value || 0))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Posicion</label>
+                      <select
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        value={config.watermark.position}
+                        onChange={(e) => updateField(["watermark", "position"], e.target.value)}
+                      >
+                        <option value="top-left">Arriba izquierda</option>
+                        <option value="top-right">Arriba derecha</option>
+                        <option value="bottom-left">Abajo izquierda</option>
+                        <option value="bottom-right">Abajo derecha</option>
+                        <option value="center">Centro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground">Tamano fuente</label>
+                      <Input
+                        type="number"
+                        min={12}
+                        max={200}
+                        value={config.watermark.font_size}
+                        onChange={(e) => updateField(["watermark", "font_size"], Number(e.target.value || 0))}
+                      />
+                    </div>
+                  </div>
+                </section>
+              </>
+            )}
 
             <div className="flex items-center justify-end gap-3">
               <Button variant="secondary" onClick={() => navigate("/my-games")}>
@@ -960,9 +1276,11 @@ export default function ContractCustomization() {
               <Button variant="hero" disabled={disabled} onClick={handleLaunchAuto}>
                 {starting ? "Abriendo..." : "Iniciar segun fecha"}
               </Button>
-              <Button variant="glow" disabled={disabled} onClick={handleSave}>
-                {saving ? "Guardando..." : "Guardar customizacion"}
-              </Button>
+              {supportsAdvancedCustomization && (
+                <Button variant="glow" disabled={disabled} onClick={handleSave}>
+                  {saving ? "Guardando..." : "Guardar customizacion"}
+                </Button>
+              )}
             </div>
           </div>
         )}

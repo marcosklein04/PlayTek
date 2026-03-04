@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, Grid, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { mapApiGameToGame } from "@/mappers/gameMapper";
 import { PurchaseFlowModal } from "@/components/PurchaseFlowModal";
 import { useLocation, useNavigate } from "react-router-dom";
+import { isGameAvailable } from "@/lib/gameAvailability";
 
 export default function Catalog() {
   const location = useLocation();
@@ -29,6 +30,14 @@ export default function Catalog() {
 
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const notifyUnavailableGame = useCallback(() => {
+    toast({
+      title: "Próximamente",
+      description: "este juego no esta disponible",
+      variant: "destructive",
+    });
+  }, [toast]);
 
   useEffect(() => {
     (async () => {
@@ -54,6 +63,20 @@ export default function Catalog() {
     const gameToOpen = games.find((game) => game.id === openGame);
     if (!gameToOpen) return;
 
+    if (!isGameAvailable(gameToOpen.id)) {
+      notifyUnavailableGame();
+      params.delete("open_game");
+      const nextSearch = params.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : "",
+        },
+        { replace: true },
+      );
+      return;
+    }
+
     setSelectedGame(gameToOpen);
     setContractGame(null);
 
@@ -66,7 +89,7 @@ export default function Catalog() {
       },
       { replace: true },
     );
-  }, [games, location.pathname, location.search, navigate]);
+  }, [games, location.pathname, location.search, navigate, notifyUnavailableGame]);
 
   const filteredGames = useMemo(() => {
     return games.filter((game) => {
@@ -83,11 +106,20 @@ export default function Catalog() {
 
   const handleOpenContract = (gameId: string) => {
     const g = games.find((x) => x.id === gameId) || null;
+    if (g && !isGameAvailable(g.id)) {
+      notifyUnavailableGame();
+      return;
+    }
     setContractGame(g);
     setSelectedGame(null);
   };
 
   const handlePreviewGame = async (gameId: string) => {
+    if (!isGameAvailable(gameId)) {
+      notifyUnavailableGame();
+      return;
+    }
+
     try {
       const res = await previewGame(gameId);
 
@@ -190,6 +222,8 @@ export default function Catalog() {
                 onViewDetails={setSelectedGame}
                 isContracted={isContracted}
                 onContract={handleOpenContract}
+                isAvailable={isGameAvailable(game.id)}
+                onUnavailableClick={notifyUnavailableGame}
               />
             );
           })}
