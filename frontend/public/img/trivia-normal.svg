@@ -1,13 +1,160 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
   <title id="title">Trivia Normal</title>
-  <desc id="desc">Logo TRIVIA con colores planos sobre fondo azul gris.</desc>
-  <rect width="1600" height="900" fill="#596180" />
-  <g font-family="Montserrat, Arial, sans-serif" font-size="340" font-weight="800">
-    <text x="150" y="575" fill="#f3523d">T</text>
-    <text x="390" y="575" fill="#f5a31b">R</text>
-    <text x="650" y="575" fill="#a3b08a">I</text>
-    <text x="770" y="575" fill="#ef3440">V</text>
-    <text x="1065" y="575" fill="#3f7ec9">I</text>
-    <text x="1190" y="575" fill="#ef7b24">A</text>
+  <desc id="desc">Portada colorida para la trivia clasica con marco brillante, tablero central y estilo de juego familiar.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#103fc8" />
+      <stop offset="35%" stop-color="#0ea5e9" />
+      <stop offset="68%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+    <linearGradient id="frame" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fde047" />
+      <stop offset="50%" stop-color="#fb7185" />
+      <stop offset="100%" stop-color="#facc15" />
+    </linearGradient>
+    <linearGradient id="panel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#10214c" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <linearGradient id="tablet" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#173472" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="titleFill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="25%" stop-color="#facc15" />
+      <stop offset="50%" stop-color="#60a5fa" />
+      <stop offset="75%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#fef08a" stop-opacity="0" />
+    </radialGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <pattern id="confetti" width="160" height="160" patternUnits="userSpaceOnUse">
+      <circle cx="20" cy="18" r="8" fill="#facc15" />
+      <circle cx="82" cy="36" r="7" fill="#fb7185" />
+      <circle cx="136" cy="20" r="8" fill="#34d399" />
+      <rect x="35" y="72" width="46" height="12" rx="6" fill="#f97316" transform="rotate(-24 58 78)" />
+      <rect x="100" y="92" width="34" height="10" rx="5" fill="#60a5fa" transform="rotate(18 117 97)" />
+      <path d="M18 126 l12 -18 l12 18 l-12 18z" fill="#c084fc" />
+      <path d="M132 132 c10 -18 24 -18 34 0" fill="none" stroke="#fef08a" stroke-width="5" stroke-linecap="round" />
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)" />
+  <rect width="1600" height="900" fill="url(#confetti)" opacity="0.5" />
+
+  <circle cx="180" cy="160" r="160" fill="#f97316" opacity="0.35" />
+  <circle cx="1450" cy="170" r="140" fill="#f43f5e" opacity="0.28" />
+  <circle cx="1360" cy="720" r="190" fill="#22c55e" opacity="0.18" />
+  <circle cx="250" cy="760" r="170" fill="#fde047" opacity="0.18" />
+
+  <rect x="58" y="50" width="1484" height="800" rx="44" fill="url(#panel)" stroke="url(#frame)" stroke-width="18" />
+  <rect x="88" y="80" width="1424" height="740" rx="34" fill="none" stroke="#38bdf8" stroke-width="8" opacity="0.85" />
+
+  <g opacity="0.9">
+    <circle cx="170" cy="120" r="28" fill="#38bdf8" />
+    <circle cx="1410" cy="128" r="34" fill="#60a5fa" />
+    <circle cx="1310" cy="156" r="18" fill="#facc15" />
+    <path d="M1458 110 l14 32 l34 4 l-26 22 l8 34 l-30 -16 l-29 16 l8 -34 l-25 -22 l33 -4z" fill="#fde047" />
+    <path d="M190 96 l9 21 l23 3 l-17 15 l5 22 l-20 -10 l-20 10 l5 -22 l-17 -15 l22 -3z" fill="#facc15" />
   </g>
+
+  <g text-anchor="middle" filter="url(#softGlow)">
+    <text x="800" y="275" font-family="Montserrat, Arial, sans-serif" font-size="220" font-weight="900" fill="url(#titleFill)" stroke="#f8fafc" stroke-width="28" paint-order="stroke fill">
+      TRIVIA
+    </text>
+    <text x="800" y="278" font-family="Montserrat, Arial, sans-serif" font-size="220" font-weight="900" fill="none" stroke="#1e3a8a" stroke-width="12">
+      TRIVIA
+    </text>
+  </g>
+
+  <text x="800" y="350" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="54" font-weight="800" fill="#f8fafc" stroke="#172554" stroke-width="7" paint-order="stroke fill">
+    EL GRAN JUEGO DE PREGUNTAS Y RESPUESTAS!
+  </text>
+
+  <g transform="translate(610 392)">
+    <rect x="0" y="0" width="380" height="340" rx="34" fill="#7dd3fc" opacity="0.25" />
+    <rect x="26" y="18" width="328" height="286" rx="28" fill="url(#tablet)" stroke="#93c5fd" stroke-width="8" />
+    <circle cx="190" cy="40" r="8" fill="#e2e8f0" />
+    <rect x="66" y="86" width="72" height="72" rx="18" fill="#2563eb" />
+    <rect x="154" y="86" width="72" height="72" rx="18" fill="#ef4444" />
+    <rect x="242" y="86" width="72" height="72" rx="18" fill="#22c55e" />
+    <rect x="66" y="176" width="72" height="72" rx="18" fill="#8b5cf6" />
+    <rect x="242" y="176" width="72" height="72" rx="18" fill="#f59e0b" />
+    <circle cx="190" cy="206" r="74" fill="url(#glow)" />
+    <text x="190" y="232" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="132" font-weight="900" fill="#fde047" stroke="#f8fafc" stroke-width="12" paint-order="stroke fill">
+      ?
+    </text>
+    <circle cx="102" cy="120" r="12" fill="#fde047" />
+    <path d="M168 104 l20 22 l30 -44" fill="none" stroke="#f8fafc" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M259 107 l14 0 l0 36" fill="none" stroke="#f8fafc" stroke-width="10" stroke-linecap="round" />
+    <circle cx="275" cy="153" r="8" fill="#f8fafc" />
+    <path d="M104 191 c14 -26 44 -26 58 0" fill="none" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" />
+    <path d="M257 204 l22 24 l22 -24" fill="none" stroke="#f8fafc" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+    <rect x="104" y="264" width="44" height="18" rx="9" fill="#60a5fa" />
+    <rect x="232" y="264" width="44" height="18" rx="9" fill="#f472b6" />
+  </g>
+
+  <g>
+    <circle cx="470" cy="560" r="56" fill="#f472b6" stroke="#f8fafc" stroke-width="10" />
+    <circle cx="1126" cy="548" r="56" fill="#fb7185" stroke="#f8fafc" stroke-width="10" />
+    <circle cx="1290" cy="486" r="52" fill="#22c55e" stroke="#f8fafc" stroke-width="10" />
+    <circle cx="310" cy="486" r="54" fill="#38bdf8" stroke="#f8fafc" stroke-width="10" />
+    <circle cx="1396" cy="612" r="48" fill="#f59e0b" stroke="#f8fafc" stroke-width="10" />
+    <circle cx="220" cy="608" r="48" fill="#34d399" stroke="#f8fafc" stroke-width="10" />
+    <text x="470" y="580" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="48" font-weight="900" fill="#f8fafc">?</text>
+    <text x="1126" y="570" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="38" font-weight="900" fill="#f8fafc">MIC</text>
+    <text x="1290" y="505" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="36" font-weight="900" fill="#f8fafc">WIN</text>
+    <text x="310" y="505" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="34" font-weight="900" fill="#f8fafc">ART</text>
+    <text x="1396" y="628" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="32" font-weight="900" fill="#f8fafc">PLAY</text>
+    <text x="220" y="626" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="30" font-weight="900" fill="#f8fafc">FUN</text>
+  </g>
+
+  <g transform="translate(140 560)">
+    <circle cx="110" cy="88" r="50" fill="#8b5e3c" />
+    <path d="M54 82 c16 -44 82 -70 118 -18 c-14 -4 -20 6 -29 14 c-24 -18 -54 -16 -89 4z" fill="#312e81" />
+    <rect x="42" y="138" width="144" height="150" rx="54" fill="#f59e0b" />
+    <rect x="95" y="152" width="38" height="92" rx="16" fill="#f8fafc" opacity="0.16" />
+    <path d="M190 190 c60 2 106 26 166 66" fill="none" stroke="#f4c2a1" stroke-width="22" stroke-linecap="round" />
+    <path d="M356 256 c16 -12 32 -16 50 -12" fill="none" stroke="#f4c2a1" stroke-width="18" stroke-linecap="round" />
+    <path d="M36 188 c-20 34 -16 76 16 110" fill="none" stroke="#f4c2a1" stroke-width="18" stroke-linecap="round" />
+  </g>
+
+  <g transform="translate(350 592)">
+    <circle cx="110" cy="76" r="48" fill="#f6c6a8" />
+    <path d="M58 64 c18 -46 98 -42 106 4 c-18 -10 -54 -14 -106 -4z" fill="#8b5a2b" />
+    <rect x="48" y="126" width="128" height="136" rx="48" fill="#22c55e" />
+    <path d="M178 184 c52 4 100 24 138 58" fill="none" stroke="#f6c6a8" stroke-width="20" stroke-linecap="round" />
+  </g>
+
+  <g transform="translate(1040 598)">
+    <circle cx="112" cy="74" r="48" fill="#f7c9b0" />
+    <path d="M52 66 c30 -44 102 -38 118 12 c-22 -12 -68 -18 -118 -12z" fill="#d97706" />
+    <rect x="52" y="126" width="128" height="140" rx="48" fill="#60a5fa" />
+    <path d="M52 184 c-44 8 -86 26 -132 56" fill="none" stroke="#f7c9b0" stroke-width="20" stroke-linecap="round" />
+  </g>
+
+  <g transform="translate(1260 560)">
+    <circle cx="104" cy="82" r="54" fill="#f5d0b5" />
+    <path d="M44 78 c12 -42 76 -76 124 -22 c-12 0 -26 8 -36 18 c-26 -10 -54 -8 -88 4z" fill="#d6d3d1" />
+    <path d="M66 108 c22 18 58 18 82 0 c-6 26 -22 38 -42 38 c-18 0 -34 -10 -40 -38z" fill="#ef8b6a" />
+    <path d="M58 108 c12 18 30 28 48 28" fill="none" stroke="#f8fafc" stroke-width="10" stroke-linecap="round" />
+    <path d="M152 108 c-12 18 -30 28 -48 28" fill="none" stroke="#f8fafc" stroke-width="10" stroke-linecap="round" />
+    <rect x="34" y="142" width="146" height="148" rx="56" fill="#b45309" />
+    <path d="M34 206 c-48 -8 -88 8 -144 46" fill="none" stroke="#f5d0b5" stroke-width="22" stroke-linecap="round" />
+  </g>
+
+  <text x="800" y="842" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="58" font-weight="900" fill="#f8fafc" stroke="#172554" stroke-width="8" paint-order="stroke fill">
+    HAZ TU JUEGO, PERSONALIZA TU DESAFIO!
+  </text>
 </svg>

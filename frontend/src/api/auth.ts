@@ -39,9 +39,8 @@ export type AuthResponse = {
 };
 
 export async function apiRegister(payload: {
-  username: string;
+  email: string;
   password: string;
-  email?: string;
   name?: string;
   organization?: string;
 }) {
@@ -54,11 +53,11 @@ export async function apiRegister(payload: {
   });
 }
 
-export async function apiLogin(username: string, password: string) {
+export async function apiLogin(email: string, password: string) {
   // usa /api/auth/login
   return http<AuthResponse>("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ email, password }),
   });
 }

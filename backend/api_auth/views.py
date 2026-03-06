@@ -1,5 +1,7 @@
 import json
 from django.contrib.auth import authenticate
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
@@ -9,6 +11,20 @@ from wallet.models import Wallet
 from .auth import token_required
 
 User = get_user_model()
+
+
+def _build_unique_username_from_email(email: str) -> str:
+    """Genera un username único derivado del email para User de Django."""
+    base = (email or "").strip().lower()
+    if not base:
+        return ""
+
+    candidate = base
+    index = 1
+    while User.objects.filter(username=candidate).exists():
+        candidate = f"{base}_{index}"
+        index += 1
+    return candidate
 
 
 def _company_name_for_user(user):
@@ -31,42 +47,43 @@ def register(request):
     except Exception:
         return JsonResponse({"error": "json_invalido"}, status=400)
 
-    username = (data.get("username") or "").strip()
-    email = (data.get("email") or "").strip()
+    email = (data.get("email") or data.get("username") or "").strip().lower()
     password = (data.get("password") or "").strip()
     name = (data.get("name") or "").strip()
 
-    if not username or not password:
-        return JsonResponse({"error": "username_y_password_requeridos"}, status=400)
+    if not email or not password:
+        return JsonResponse({"error": "email_y_password_requeridos"}, status=400)
 
-    if User.objects.filter(username=username).exists():
-        return JsonResponse({"error": "username_ya_existe"}, status=409)
+    try:
+        validate_email(email)
+    except ValidationError:
+        return JsonResponse({"error": "email_invalido"}, status=400)
 
-    if email and User.objects.filter(email=email).exists():
+    if User.objects.filter(email__iexact=email).exists():
         return JsonResponse({"error": "email_ya_existe"}, status=409)
 
+    username = _build_unique_username_from_email(email)
     user = User.objects.create_user(username=username, email=email, password=password)
     if name:
         # opcional: guardar nombre en first_name
         user.first_name = name
         user.save(update_fields=["first_name"])
 
-        token = ApiToken.objects.create(user=user, key=ApiToken.generate_key())
+    token = ApiToken.objects.create(user=user, key=ApiToken.generate_key())
+    Wallet.objects.get_or_create(user=user, defaults={"balance": 0})
 
-        Wallet.objects.get_or_create(user=user, defaults={"balance": 0})
-
-        return JsonResponse({
-            "ok": True,
-            "token": token.key,
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email or "",
-                "name": user.get_full_name() or user.username,
-                "organization": _company_name_for_user(user),
-                "role": "admin" if user.is_superuser else "client",
-            }
-        }, status=201)
+    return JsonResponse({
+        "ok": True,
+        "token": token.key,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email or "",
+            "name": user.get_full_name() or user.email or user.username,
+            "organization": _company_name_for_user(user),
+            "role": "admin" if user.is_superuser else "client",
+        }
+    }, status=201)
 
 
 
@@ -78,13 +95,17 @@ def login(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "invalid_json"}, status=400)
 
-    username = payload.get("username")
+    email = (payload.get("email") or payload.get("username") or "").strip().lower()
     password = payload.get("password")
 
-    if not username or not password:
-        return JsonResponse({"error": "username_and_password_required"}, status=400)
+    if not email or not password:
+        return JsonResponse({"error": "email_and_password_required"}, status=400)
 
-    user = authenticate(username=username, password=password)
+    user_by_email = User.objects.filter(email__iexact=email).first()
+    if user_by_email is None:
+        return JsonResponse({"error": "invalid_credentials"}, status=401)
+
+    user = authenticate(username=user_by_email.username, password=password)
     if user is None:
         return JsonResponse({"error": "invalid_credentials"}, status=401)
 
@@ -96,7 +117,7 @@ def login(request):
             "id": user.id,
             "username": user.username,
             "email": user.email or "",
-            "name": user.get_full_name() or user.username,
+            "name": user.get_full_name() or user.email or user.username,
             "organization": _company_name_for_user(user),
             "role": "admin" if user.is_superuser else "client",
         }
@@ -110,7 +131,7 @@ def me(request):
         "id": user.id,
         "username": user.username,
         "email": user.email or "",
-        "name": user.get_full_name() or user.username,
+        "name": user.get_full_name() or user.email or user.username,
         "organization": _company_name_for_user(user),
         "role": "admin" if user.is_superuser else "client",
     })

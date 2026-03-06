@@ -13,8 +13,8 @@ type AuthContextType = {
   walletBalance: number | null;
   refreshContractedGames: () => Promise<void>;
   refreshWalletBalance: () => Promise<void>;
-  login: (username: string, password: string) => Promise<boolean>;
-  register: (username: string, password: string, organization: string, name: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (email: string, password: string, organization: string, name: string) => Promise<boolean>;
   logout: () => void;
 };
 
@@ -130,10 +130,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshContractedGames, refreshWalletBalance]);
 
   const register = useCallback(
-    async (username: string, password: string, organization: string, name: string) => {
+    async (email: string, password: string, organization: string, name: string) => {
       try {
         const res = await apiRegister({
-          username,
+          email,
           password,
           name,
           organization,
@@ -147,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: u.email || "",
           organization: u.organization || organization || "",
           role: u.role || "client",
-          name: u.name || u.username,
+          name: u.name || u.email || u.username,
         };
 
         localStorage.setItem(USER_KEY, JSON.stringify(mappedUser));
@@ -163,9 +163,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (email: string, password: string) => {
       try {
-        const res = await apiLogin(username, password);
+        const res = await apiLogin(email, password);
 
         // ✅ token
         localStorage.setItem(TOKEN_KEY, res.token);
@@ -177,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: u.email || "",
           organization: u.organization || "",
           role: u.role || "client",
-          name: u.name || u.username || "",
+          name: u.name || u.email || u.username || "",
         };
 
         localStorage.setItem(USER_KEY, JSON.stringify(mappedUser));

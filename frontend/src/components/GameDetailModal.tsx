@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Check, Zap, Star, ArrowRight } from 'lucide-react';
+import { X, Check, Zap, Star, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Game } from '@/types';
@@ -65,15 +65,6 @@ export function GameDetailModal({ game, isOpen, onClose, onContract, onPreview, 
                   className="absolute inset-0 w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-card to-transparent" />
-                
-                {/* Play button */}
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center shadow-lg shadow-primary/40"
-                >
-                  <Play className="w-8 h-8 text-primary-foreground ml-1" />
-                </motion.button>
 
                 {/* Badges */}
                 <div className="absolute top-4 left-4 flex gap-2">
@@ -200,7 +191,7 @@ export function GameDetailModal({ game, isOpen, onClose, onContract, onPreview, 
                       onClick={() => onPreview && onPreview(game.id)}
                       disabled={!onPreview}
                     >
-                      Probar con marca de agua
+                      Jugar version de prueba
                     </Button>
                   </div>
                 </div>

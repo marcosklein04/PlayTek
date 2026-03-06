@@ -8,8 +8,6 @@ import { Label } from '@/components/ui/label';
 import { PlaytekLogo } from '@/components/PlaytekLogo';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { title } from 'process';
-import { Description } from '@radix-ui/react-toast';
 
 
 type AuthMode = 'login' | 'register' | 'forgot';
@@ -202,13 +200,13 @@ export default function Auth() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="user">Usuario</Label>
+                  <Label htmlFor="email">Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
-                      id="user"
-                      type="text"
-                      placeholder="usuario"
+                      id="email"
+                      type="email"
+                      placeholder="tu@email.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10"

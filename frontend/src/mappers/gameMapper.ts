@@ -2,8 +2,9 @@ import { Game } from "@/types";
 import { ApiGame } from "@/api/games";
 
 const FALLBACK_IMAGE_BY_SLUG: Record<string, string> = {
-  trivia: "/img/trivia-normal.svg",
-  "trivia-sparkle": "/img/trivia-sparkle.svg",
+  connect4: "/img/connect4.jpeg",
+  trivia: "/img/trivia-normal.jpeg",
+  "trivia-sparkle": "/img/trivia-sparkle.jpeg",
 };
 
 function parseNumber(value: unknown): number | null {
