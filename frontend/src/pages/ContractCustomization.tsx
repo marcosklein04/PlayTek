@@ -2,78 +2,46 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   ContractAssetKey,
+  ContractSparkleQuestion,
   ContractTriviaQuestion,
   TriviaCustomization,
   createContractTriviaQuestion,
-  deleteContractTriviaQuestion,
   deleteContractAsset,
+  deleteContractTriviaQuestion,
   fetchContractCustomization,
+  fetchContractSparkleQuestions,
   fetchContractTriviaQuestions,
-  importContractTriviaCsv,
   launchContractByDate,
   saveContractCustomization,
+  saveContractSparkleQuestions,
   startContractPreview,
   updateContractTriviaQuestion,
   uploadContractAsset,
+  uploadContractSparkleImage,
 } from "@/api/contracts";
-
-type TriviaQuestionForm = {
-  text: string;
-  choices: Array<{ text: string; is_correct: boolean }>;
-};
-
-type BulkTriviaQuestionForm = TriviaQuestionForm & {
-  questionId: number | null;
-};
-
-const MAX_FORM_CHOICES = 6;
-const MAX_BULK_QUESTIONS = 50;
-
-function buildEmptyQuestionForm(): TriviaQuestionForm {
-  return {
-    text: "",
-    choices: [
-      { text: "", is_correct: true },
-      { text: "", is_correct: false },
-      { text: "", is_correct: false },
-      { text: "", is_correct: false },
-    ],
-  };
-}
-
-function questionToForm(question: ContractTriviaQuestion): TriviaQuestionForm {
-  const choices = question.choices.map((choice) => ({
-    text: choice.text,
-    is_correct: choice.is_correct,
-  }));
-  while (choices.length < 4) {
-    choices.push({ text: "", is_correct: false });
-  }
-  return {
-    text: question.text,
-    choices,
-  };
-}
-
-function buildBulkQuestionForm(question?: ContractTriviaQuestion): BulkTriviaQuestionForm {
-  if (!question) {
-    return { questionId: null, ...buildEmptyQuestionForm() };
-  }
-  return {
-    questionId: question.id,
-    ...questionToForm(question),
-  };
-}
-
-function buildBulkQuestionForms(count: number, sourceQuestions: ContractTriviaQuestion[]): BulkTriviaQuestionForm[] {
-  const safeCount = Math.max(1, Math.min(MAX_BULK_QUESTIONS, count));
-  return Array.from({ length: safeCount }, (_, index) => buildBulkQuestionForm(sourceQuestions[index]));
-}
+import { SparkleBrandingSection } from "@/components/contract-customization/SparkleBrandingSection";
+import { SparkleIntroSection } from "@/components/contract-customization/SparkleIntroSection";
+import { SparklePreviewPanel } from "@/components/contract-customization/SparklePreviewPanel";
+import { SparkleQuestionsSection } from "@/components/contract-customization/SparkleQuestionsSection";
+import { SparkleRulesSection } from "@/components/contract-customization/SparkleRulesSection";
+import { SparkleVisualSection } from "@/components/contract-customization/SparkleVisualSection";
+import {
+  MAX_SPARKLE_QUESTIONS,
+  buildEmptySparkleAnswer,
+  buildEmptySparkleQuestion,
+  buildSparkleQuestionForms,
+} from "@/components/contract-customization/sparkleQuestionForms";
+import { TriviaQuestionsSection } from "@/components/contract-customization/TriviaQuestionsSection";
+import {
+  BulkTriviaQuestionForm,
+  MAX_BULK_QUESTIONS,
+  MAX_FORM_CHOICES,
+  buildBulkQuestionForm,
+  buildBulkQuestionForms,
+} from "@/components/contract-customization/triviaQuestionForms";
 
 export default function ContractCustomization() {
   const { id } = useParams<{ id: string }>();
@@ -86,34 +54,34 @@ export default function ContractCustomization() {
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [uploadingAsset, setUploadingAsset] = useState<ContractAssetKey | null>(null);
+
   const [gameSlug, setGameSlug] = useState("");
   const [config, setConfig] = useState<TriviaCustomization | null>(null);
-  const [questionsLoading, setQuestionsLoading] = useState(false);
-  const [questionsSaving, setQuestionsSaving] = useState(false);
-  const [questions, setQuestions] = useState<ContractTriviaQuestion[]>([]);
-  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
-  const [questionSetId, setQuestionSetId] = useState<number | null>(null);
-  const [questionForm, setQuestionForm] = useState<TriviaQuestionForm>(buildEmptyQuestionForm());
+
+  const [triviaQuestionsLoading, setTriviaQuestionsLoading] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [triviaQuestions, setTriviaQuestions] = useState<ContractTriviaQuestion[]>([]);
   const [bulkQuestionCount, setBulkQuestionCount] = useState("1");
   const [bulkQuestionForms, setBulkQuestionForms] = useState<BulkTriviaQuestionForm[]>([buildBulkQuestionForm()]);
-  const [bulkSaving, setBulkSaving] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvReplaceExisting, setCsvReplaceExisting] = useState(false);
-  const [csvUploading, setCsvUploading] = useState(false);
+
+  const [sparkleQuestionsLoading, setSparkleQuestionsLoading] = useState(false);
+  const [sparkleSaving, setSparkleSaving] = useState(false);
+  const [sparkleUploadingImageKey, setSparkleUploadingImageKey] = useState<string | null>(null);
+  const [sparkleQuestions, setSparkleQuestions] = useState<ContractSparkleQuestion[]>([]);
+  const [sparkleQuestionCount, setSparkleQuestionCount] = useState("1");
+  const [sparkleQuestionForms, setSparkleQuestionForms] = useState<ContractSparkleQuestion[]>([buildEmptySparkleQuestion()]);
+
   const normalizedGameSlug = gameSlug.trim().toLowerCase();
   const isTriviaSparkle = normalizedGameSlug === "trivia-sparkle";
-  const supportsTriviaQuestions = normalizedGameSlug.includes("trivia");
-  const supportsAdvancedCustomization = isTriviaSparkle;
+  const supportsTriviaQuestions = normalizedGameSlug === "trivia";
+  const supportsSparkleQuestions = isTriviaSparkle;
+
+  const configuredQuestionsCount = supportsSparkleQuestions ? sparkleQuestionForms.length : bulkQuestionForms.length;
 
   const disabled = useMemo(
-    () => !config || saving || starting || uploadingAsset !== null || questionsSaving || bulkSaving || csvUploading,
-    [config, saving, starting, uploadingAsset, questionsSaving, bulkSaving, csvUploading],
+    () => !config || saving || starting || uploadingAsset !== null || bulkSaving || sparkleSaving || sparkleUploadingImageKey !== null,
+    [config, saving, starting, uploadingAsset, bulkSaving, sparkleSaving, sparkleUploadingImageKey],
   );
-  const watermarkOpacityLabel = useMemo(() => {
-    if (!config) return "0.00";
-    const value = Number(config.watermark.opacity || 0);
-    return Number.isFinite(value) ? value.toFixed(2) : "0.00";
-  }, [config]);
 
   useEffect(() => {
     if (!validId) {
@@ -135,12 +103,11 @@ export default function ContractCustomization() {
         setLoading(false);
       }
     })();
-  }, [contractId, validId, navigate, toast]);
+  }, [contractId, navigate, toast, validId]);
 
   useEffect(() => {
     if (!validId || !supportsTriviaQuestions) {
-      setQuestions([]);
-      setQuestionSetId(null);
+      setTriviaQuestions([]);
       setBulkQuestionCount("1");
       setBulkQuestionForms([buildBulkQuestionForm()]);
       return;
@@ -148,32 +115,80 @@ export default function ContractCustomization() {
 
     (async () => {
       try {
-        setQuestionsLoading(true);
+        setTriviaQuestionsLoading(true);
         const res = await fetchContractTriviaQuestions(contractId);
         const nextQuestions = res.questions || [];
-        setQuestions(nextQuestions);
-        setQuestionSetId(res.question_set_id ?? null);
         const initialCount = Math.max(1, nextQuestions.length);
+        setTriviaQuestions(nextQuestions);
         setBulkQuestionCount(String(initialCount));
         setBulkQuestionForms(buildBulkQuestionForms(initialCount, nextQuestions));
       } catch (error) {
         const message = error instanceof Error ? error.message : "No se pudieron cargar las preguntas";
         toast({ title: "Error", description: message, variant: "destructive" });
       } finally {
-        setQuestionsLoading(false);
+        setTriviaQuestionsLoading(false);
       }
     })();
-  }, [contractId, validId, supportsTriviaQuestions, toast]);
+  }, [contractId, supportsTriviaQuestions, toast, validId]);
+
+  useEffect(() => {
+    if (!validId || !supportsSparkleQuestions) {
+      setSparkleQuestions([]);
+      setSparkleQuestionCount("1");
+      setSparkleQuestionForms([buildEmptySparkleQuestion()]);
+      return;
+    }
+
+    (async () => {
+      try {
+        setSparkleQuestionsLoading(true);
+        const res = await fetchContractSparkleQuestions(contractId);
+        const nextQuestions = res.questions || [];
+        const initialCount = Math.max(1, nextQuestions.length);
+        setSparkleQuestions(nextQuestions);
+        setSparkleQuestionCount(String(initialCount));
+        setSparkleQuestionForms(buildSparkleQuestionForms(initialCount, nextQuestions));
+        setConfig((prev) => {
+          if (!prev) return prev;
+          const next = structuredClone(prev);
+          next.content = {
+            ...(next.content || {}),
+            sparkle_questions: nextQuestions,
+          };
+          return next;
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudieron cargar las preguntas de Sparkle";
+        toast({ title: "Error", description: message, variant: "destructive" });
+      } finally {
+        setSparkleQuestionsLoading(false);
+      }
+    })();
+  }, [contractId, supportsSparkleQuestions, toast, validId]);
 
   const updateField = (path: string[], value: string | number | boolean) => {
     setConfig((prev) => {
       if (!prev) return prev;
       const next = structuredClone(prev);
-      let cursor: any = next;
-      for (let i = 0; i < path.length - 1; i += 1) {
-        cursor = cursor[path[i]];
+      let cursor: Record<string, unknown> = next as unknown as Record<string, unknown>;
+
+      for (let index = 0; index < path.length - 1; index += 1) {
+        cursor = cursor[path[index]] as Record<string, unknown>;
       }
+
       cursor[path[path.length - 1]] = value;
+      return next;
+    });
+  };
+
+  const syncSparkleQuestionsIntoConfig = (questions: ContractSparkleQuestion[]) => {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev);
+      next.content = {
+        ...(next.content || {}),
+        sparkle_questions: questions,
+      };
       return next;
     });
   };
@@ -193,82 +208,11 @@ export default function ContractCustomization() {
       next.watermark.color = "#00f5e9";
       return next;
     });
+
     toast({
       title: "Paleta Playteck aplicada",
       description: "Ajustamos colores para Trivia Sparkle. Guarda para confirmar.",
     });
-  };
-
-  const updateQuestionChoice = (choiceIndex: number, value: string) => {
-    setQuestionForm((prev) => {
-      const next = structuredClone(prev);
-      next.choices[choiceIndex].text = value;
-      return next;
-    });
-  };
-
-  const setCorrectChoice = (choiceIndex: number) => {
-    setQuestionForm((prev) => {
-      const next = structuredClone(prev);
-      next.choices = next.choices.map((choice, index) => ({
-        ...choice,
-        is_correct: index === choiceIndex,
-      }));
-      return next;
-    });
-  };
-
-  const addChoiceField = () => {
-    setQuestionForm((prev) => {
-      if (prev.choices.length >= MAX_FORM_CHOICES) return prev;
-      return {
-        ...prev,
-        choices: [...prev.choices, { text: "", is_correct: false }],
-      };
-    });
-  };
-
-  const removeChoiceField = (choiceIndex: number) => {
-    setQuestionForm((prev) => {
-      if (prev.choices.length <= 2) return prev;
-      const nextChoices = prev.choices.filter((_, index) => index !== choiceIndex);
-      if (!nextChoices.some((choice) => choice.is_correct)) {
-        nextChoices[0].is_correct = true;
-      }
-      return {
-        ...prev,
-        choices: nextChoices,
-      };
-    });
-  };
-
-  const syncBulkFromQuestions = (sourceQuestions: ContractTriviaQuestion[]) => {
-    const nextCount = Math.max(1, sourceQuestions.length);
-    setBulkQuestionCount(String(nextCount));
-    setBulkQuestionForms(buildBulkQuestionForms(nextCount, sourceQuestions));
-  };
-
-  const handleApplyBulkQuestionCount = () => {
-    const parsed = Number.parseInt(bulkQuestionCount, 10);
-    if (!Number.isFinite(parsed) || parsed < 1) {
-      toast({
-        title: "Cantidad inválida",
-        description: "Ingresa un número mayor o igual a 1.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const bounded = Math.min(MAX_BULK_QUESTIONS, parsed);
-    if (bounded !== parsed) {
-      toast({
-        title: "Cantidad ajustada",
-        description: `Máximo permitido: ${MAX_BULK_QUESTIONS} preguntas.`,
-      });
-    }
-
-    setBulkQuestionCount(String(bounded));
-    setBulkQuestionForms(buildBulkQuestionForms(bounded, questions));
   };
 
   const updateBulkQuestionText = (questionIndex: number, value: string) => {
@@ -317,6 +261,7 @@ export default function ContractCustomization() {
       const next = structuredClone(prev);
       const question = next[questionIndex];
       if (!question || question.choices.length <= 2) return prev;
+
       const nextChoices = question.choices.filter((_, index) => index !== choiceIndex);
       if (!nextChoices.some((choice) => choice.is_correct)) {
         nextChoices[0].is_correct = true;
@@ -324,6 +269,39 @@ export default function ContractCustomization() {
       question.choices = nextChoices;
       return next;
     });
+  };
+
+  const handleRemoveBulkQuestion = (questionIndex: number) => {
+    const nextForms =
+      bulkQuestionForms.length <= 1
+        ? [buildBulkQuestionForm()]
+        : bulkQuestionForms.filter((_, index) => index !== questionIndex);
+
+    setBulkQuestionForms(nextForms);
+    setBulkQuestionCount(String(nextForms.length));
+  };
+
+  const handleApplyBulkQuestionCount = () => {
+    const parsed = Number.parseInt(bulkQuestionCount, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      toast({
+        title: "Cantidad inválida",
+        description: "Ingresa un número mayor o igual a 1.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const bounded = Math.min(MAX_BULK_QUESTIONS, parsed);
+    if (bounded !== parsed) {
+      toast({
+        title: "Cantidad ajustada",
+        description: `Máximo permitido: ${MAX_BULK_QUESTIONS} preguntas.`,
+      });
+    }
+
+    setBulkQuestionCount(String(bounded));
+    setBulkQuestionForms(buildBulkQuestionForms(bounded, triviaQuestions));
   };
 
   const handleSaveAllQuestions = async () => {
@@ -337,7 +315,12 @@ export default function ContractCustomization() {
       return;
     }
 
-    const normalizedPayload = [];
+    const normalizedPayload: Array<{
+      questionId: number | null;
+      text: string;
+      choices: Array<{ text: string; is_correct: boolean }>;
+    }> = [];
+
     for (let index = 0; index < bulkQuestionForms.length; index += 1) {
       const form = bulkQuestionForms[index];
       const text = form.text.trim();
@@ -353,6 +336,7 @@ export default function ContractCustomization() {
         });
         return;
       }
+
       if (choices.length < 2) {
         toast({
           title: "Opciones insuficientes",
@@ -361,6 +345,7 @@ export default function ContractCustomization() {
         });
         return;
       }
+
       const correctCount = choices.filter((choice) => choice.is_correct).length;
       if (correctCount !== 1) {
         toast({
@@ -381,7 +366,6 @@ export default function ContractCustomization() {
     try {
       setBulkSaving(true);
       const savedQuestions: ContractTriviaQuestion[] = [];
-      let nextQuestionSetId = questionSetId;
 
       for (const item of normalizedPayload) {
         if (item.questionId) {
@@ -390,29 +374,25 @@ export default function ContractCustomization() {
             choices: item.choices,
           });
           savedQuestions.push(res.question);
-          nextQuestionSetId = res.question_set_id ?? nextQuestionSetId;
-        } else {
-          const res = await createContractTriviaQuestion(contractId, {
-            text: item.text,
-            choices: item.choices,
-          });
-          savedQuestions.push(res.question);
-          nextQuestionSetId = res.question_set_id ?? nextQuestionSetId;
+          continue;
         }
+
+        const res = await createContractTriviaQuestion(contractId, {
+          text: item.text,
+          choices: item.choices,
+        });
+        savedQuestions.push(res.question);
       }
 
       const savedIds = new Set(savedQuestions.map((question) => question.id));
-      const staleQuestions = questions.filter((question) => !savedIds.has(question.id));
+      const staleQuestions = triviaQuestions.filter((question) => !savedIds.has(question.id));
       for (const staleQuestion of staleQuestions) {
         await deleteContractTriviaQuestion(contractId, staleQuestion.id);
       }
 
-      setQuestions(savedQuestions);
-      setQuestionSetId(nextQuestionSetId ?? null);
+      setTriviaQuestions(savedQuestions);
       setBulkQuestionForms(savedQuestions.map((question) => buildBulkQuestionForm(question)));
       setBulkQuestionCount(String(savedQuestions.length));
-      setEditingQuestionId(null);
-      setQuestionForm(buildEmptyQuestionForm());
 
       toast({
         title: "Preguntas guardadas",
@@ -426,134 +406,261 @@ export default function ContractCustomization() {
     }
   };
 
+  const updateSparklePrompt = (questionIndex: number, value: string) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]) return prev;
+      next[questionIndex].prompt = value;
+      return next;
+    });
+  };
+
+  const updateSparkleType = (questionIndex: number, value: "text_answers" | "image_answers") => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      const question = next[questionIndex];
+      if (!question) return prev;
+      question.type = value;
+      if (value === "text_answers") {
+        question.answers = question.answers.map((answer) => ({ ...answer, imageUrl: "" }));
+      }
+      return next;
+    });
+  };
+
+  const updateSparkleAnswerLabel = (questionIndex: number, answerIndex: number, value: string) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]?.answers[answerIndex]) return prev;
+      next[questionIndex].answers[answerIndex].label = value;
+      return next;
+    });
+  };
+
+  const setSparkleCorrectAnswer = (questionIndex: number, answerId: string) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]) return prev;
+      next[questionIndex].correctAnswerId = answerId;
+      return next;
+    });
+  };
+
+  const addSparkleAnswer = (questionIndex: number) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      const question = next[questionIndex];
+      if (!question || question.answers.length >= MAX_SPARKLE_ANSWERS) return prev;
+      question.answers.push(buildEmptySparkleAnswer());
+      return next;
+    });
+  };
+
+  const removeSparkleAnswer = (questionIndex: number, answerIndex: number) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      const question = next[questionIndex];
+      if (!question || question.answers.length <= 2) return prev;
+      const removed = question.answers[answerIndex];
+      question.answers = question.answers.filter((_, index) => index !== answerIndex);
+      if (removed && question.correctAnswerId === removed.id) {
+        question.correctAnswerId = question.answers[0].id;
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveSparkleQuestion = (questionIndex: number) => {
+    const nextQuestions =
+      sparkleQuestionForms.length <= 1
+        ? [buildEmptySparkleQuestion()]
+        : sparkleQuestionForms.filter((_, index) => index !== questionIndex);
+    setSparkleQuestionForms(nextQuestions);
+    setSparkleQuestionCount(String(nextQuestions.length));
+  };
+
+  const handleApplySparkleQuestionCount = () => {
+    const parsed = Number.parseInt(sparkleQuestionCount, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      toast({
+        title: "Cantidad inválida",
+        description: "Ingresa un número mayor o igual a 1.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const bounded = Math.min(MAX_SPARKLE_QUESTIONS, parsed);
+    if (bounded !== parsed) {
+      toast({
+        title: "Cantidad ajustada",
+        description: `Máximo permitido: ${MAX_SPARKLE_QUESTIONS} preguntas.`,
+      });
+    }
+
+    setSparkleQuestionCount(String(bounded));
+    setSparkleQuestionForms(buildSparkleQuestionForms(bounded, sparkleQuestions));
+  };
+
+  const handleSparkleQuestionImageUpload = async (questionIndex: number, file?: File | null) => {
+    if (!validId || !file) return;
+    const question = sparkleQuestionForms[questionIndex];
+    if (!question) return;
+
+    try {
+      setSparkleUploadingImageKey(`question-${question.id}`);
+      const response = await uploadContractSparkleImage(contractId, file);
+      setSparkleQuestionForms((prev) => {
+        const next = structuredClone(prev);
+        if (!next[questionIndex]) return prev;
+        next[questionIndex].questionImageUrl = response.image_url;
+        return next;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo subir la imagen";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setSparkleUploadingImageKey(null);
+    }
+  };
+
+  const handleSparkleAnswerImageUpload = async (questionIndex: number, answerIndex: number, file?: File | null) => {
+    if (!validId || !file) return;
+    const question = sparkleQuestionForms[questionIndex];
+    const answer = question?.answers[answerIndex];
+    if (!question || !answer) return;
+
+    try {
+      setSparkleUploadingImageKey(`answer-${question.id}-${answer.id}`);
+      const response = await uploadContractSparkleImage(contractId, file);
+      setSparkleQuestionForms((prev) => {
+        const next = structuredClone(prev);
+        if (!next[questionIndex]?.answers[answerIndex]) return prev;
+        next[questionIndex].answers[answerIndex].imageUrl = response.image_url;
+        return next;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo subir la imagen";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setSparkleUploadingImageKey(null);
+    }
+  };
+
+  const clearSparkleQuestionImage = (questionIndex: number) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]) return prev;
+      next[questionIndex].questionImageUrl = "";
+      return next;
+    });
+  };
+
+  const clearSparkleAnswerImage = (questionIndex: number, answerIndex: number) => {
+    setSparkleQuestionForms((prev) => {
+      const next = structuredClone(prev);
+      if (!next[questionIndex]?.answers[answerIndex]) return prev;
+      next[questionIndex].answers[answerIndex].imageUrl = "";
+      return next;
+    });
+  };
+
+  const handleSaveSparkleQuestions = async () => {
+    if (!validId) return;
+
+    const normalizedQuestions: ContractSparkleQuestion[] = [];
+    for (let index = 0; index < sparkleQuestionForms.length; index += 1) {
+      const question = sparkleQuestionForms[index];
+      const prompt = question.prompt.trim();
+      const answers = question.answers
+        .map((answer) => ({ ...answer, label: answer.label.trim(), imageUrl: answer.imageUrl.trim() }))
+        .filter((answer) => answer.label.length > 0 || answer.imageUrl.length > 0);
+
+      if (!prompt) {
+        toast({
+          title: "Pregunta incompleta",
+          description: `Completa el enunciado de la pregunta ${index + 1}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (answers.length < 2) {
+        toast({
+          title: "Respuestas insuficientes",
+          description: `La pregunta ${index + 1} necesita al menos 2 respuestas.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (question.type === "image_answers" && answers.some((answer) => !answer.imageUrl)) {
+        toast({
+          title: "Faltan imágenes",
+          description: `Cada respuesta con imagen de la pregunta ${index + 1} debe tener su imagen cargada.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (answers.some((answer) => !answer.label)) {
+        toast({
+          title: "Falta texto de apoyo",
+          description: `Cada respuesta de la pregunta ${index + 1} necesita un texto corto.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!answers.some((answer) => answer.id === question.correctAnswerId)) {
+        toast({
+          title: "Respuesta correcta inválida",
+          description: `Marca una respuesta correcta en la pregunta ${index + 1}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      normalizedQuestions.push({
+        ...question,
+        prompt,
+        questionImageUrl: question.questionImageUrl.trim(),
+        answers,
+      });
+    }
+
+    try {
+      setSparkleSaving(true);
+      const response = await saveContractSparkleQuestions(contractId, normalizedQuestions);
+      const nextQuestions = response.questions || [];
+      const nextCount = Math.max(1, nextQuestions.length);
+      setSparkleQuestions(nextQuestions);
+      setSparkleQuestionCount(String(nextCount));
+      setSparkleQuestionForms(buildSparkleQuestionForms(nextCount, nextQuestions));
+      syncSparkleQuestionsIntoConfig(nextQuestions);
+      toast({
+        title: "Preguntas guardadas",
+        description: `Se guardaron ${nextQuestions.length} preguntas de Trivia Sparkle.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron guardar las preguntas de Sparkle";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setSparkleSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!config || !validId) return;
     try {
       setSaving(true);
       await saveContractCustomization(contractId, config);
-      toast({ title: "Guardado", description: "La customizacion quedo lista para el evento." });
+      toast({ title: "Guardado", description: "La customizacion quedó lista para el evento." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo guardar";
       toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleSaveQuestion = async () => {
-    if (!validId) return;
-
-    const text = questionForm.text.trim();
-    const choices = questionForm.choices
-      .map((choice) => ({ ...choice, text: choice.text.trim() }))
-      .filter((choice) => choice.text.length > 0);
-
-    if (!text) {
-      toast({ title: "Falta la pregunta", description: "Escribe el texto de la pregunta.", variant: "destructive" });
-      return;
-    }
-    if (choices.length < 2) {
-      toast({
-        title: "Opciones insuficientes",
-        description: "Debes cargar al menos 2 opciones con texto.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const correctCount = choices.filter((choice) => choice.is_correct).length;
-    if (correctCount !== 1) {
-      toast({
-        title: "Respuesta correcta",
-        description: "Marca exactamente una opcion correcta.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setQuestionsSaving(true);
-      if (editingQuestionId) {
-        const res = await updateContractTriviaQuestion(contractId, editingQuestionId, { text, choices });
-        const nextQuestions = questions.map((question) => (question.id === editingQuestionId ? res.question : question));
-        setQuestions(nextQuestions);
-        syncBulkFromQuestions(nextQuestions);
-        toast({ title: "Pregunta actualizada", description: "Cambios guardados correctamente." });
-      } else {
-        const res = await createContractTriviaQuestion(contractId, { text, choices });
-        const nextQuestions = [...questions, res.question];
-        setQuestions(nextQuestions);
-        syncBulkFromQuestions(nextQuestions);
-        setQuestionSetId(res.question_set_id);
-        toast({ title: "Pregunta creada", description: "Se agrego al contrato." });
-      }
-
-      setEditingQuestionId(null);
-      setQuestionForm(buildEmptyQuestionForm());
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo guardar la pregunta";
-      toast({ title: "Error", description: message, variant: "destructive" });
-    } finally {
-      setQuestionsSaving(false);
-    }
-  };
-
-  const handleEditQuestion = (question: ContractTriviaQuestion) => {
-    setEditingQuestionId(question.id);
-    setQuestionForm(questionToForm(question));
-  };
-
-  const handleCancelEditQuestion = () => {
-    setEditingQuestionId(null);
-    setQuestionForm(buildEmptyQuestionForm());
-  };
-
-  const handleDeleteQuestion = async (questionId: number) => {
-    if (!validId) return;
-    try {
-      setQuestionsSaving(true);
-      await deleteContractTriviaQuestion(contractId, questionId);
-      const nextQuestions = questions.filter((question) => question.id !== questionId);
-      setQuestions(nextQuestions);
-      syncBulkFromQuestions(nextQuestions);
-      if (editingQuestionId === questionId) {
-        handleCancelEditQuestion();
-      }
-      toast({ title: "Pregunta eliminada", description: "La pregunta fue removida del contrato." });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo eliminar la pregunta";
-      toast({ title: "Error", description: message, variant: "destructive" });
-    } finally {
-      setQuestionsSaving(false);
-    }
-  };
-
-  const handleImportCsv = async () => {
-    if (!validId || !csvFile) {
-      toast({
-        title: "Selecciona un archivo",
-        description: "Debes elegir un CSV antes de importar.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setCsvUploading(true);
-      const res = await importContractTriviaCsv(contractId, csvFile, csvReplaceExisting);
-      const nextQuestions = res.questions || [];
-      setQuestions(nextQuestions);
-      setQuestionSetId(res.question_set_id);
-      syncBulkFromQuestions(nextQuestions);
-      setCsvFile(null);
-      toast({
-        title: "CSV importado",
-        description: `Preguntas importadas: ${res.imported}. Errores: ${res.errors.length}.`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo importar el CSV";
-      toast({ title: "Error", description: message, variant: "destructive" });
-    } finally {
-      setCsvUploading(false);
     }
   };
 
@@ -563,7 +670,7 @@ export default function ContractCustomization() {
       setUploadingAsset(assetKey);
       const res = await uploadContractAsset(contractId, assetKey, file);
       setConfig(res.config);
-      toast({ title: "Asset subido", description: "Se actualizo la customizacion del contrato." });
+      toast({ title: "Asset subido", description: "Se actualizó la customización del contrato." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo subir el archivo";
       toast({ title: "Error", description: message, variant: "destructive" });
@@ -578,7 +685,7 @@ export default function ContractCustomization() {
       setUploadingAsset(assetKey);
       const res = await deleteContractAsset(contractId, assetKey);
       setConfig(res.config);
-      toast({ title: "Asset eliminado", description: "Se borro el archivo del contrato." });
+      toast({ title: "Asset eliminado", description: "Se borró el archivo del contrato." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo eliminar el archivo";
       toast({ title: "Error", description: message, variant: "destructive" });
@@ -609,7 +716,7 @@ export default function ContractCustomization() {
       if (res.preview_mode) {
         toast({
           title: "Modo preview",
-          description: "Fuera de fecha de evento: se abrio con watermark.",
+          description: "Fuera de fecha de evento: se abrió con watermark.",
         });
       }
       window.location.href = res.juego.runner_url;
@@ -624,618 +731,87 @@ export default function ContractCustomization() {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="ml-64 p-8 max-w-5xl">
-        <div className="mb-6">
-          <h1 className="text-3xl font-display font-bold text-foreground">Customizacion</h1>
-          <p className="text-muted-foreground mt-1">
-            Contrato #{validId ? contractId : "-"} {gameSlug ? `· ${gameSlug}` : ""}
-          </p>
+      <main className="ml-64 p-8 max-w-7xl">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-foreground">
+              {isTriviaSparkle ? "Personalizar Trivia Sparkle" : "Customización del contrato"}
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Contrato #{validId ? contractId : "-"} {gameSlug ? `· ${gameSlug}` : ""}
+            </p>
+          </div>
+          {(supportsTriviaQuestions || supportsSparkleQuestions) && !loading && (
+            <div className="rounded-2xl border border-border/70 bg-background/30 px-4 py-3 text-right">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Preguntas configuradas</p>
+              <p className="text-2xl font-semibold text-foreground">{configuredQuestionsCount}</p>
+            </div>
+          )}
         </div>
 
-        {loading && <p className="text-sm text-muted-foreground">Cargando configuracion...</p>}
+        {loading && <p className="text-sm text-muted-foreground">Cargando configuración...</p>}
 
         {!loading && config && (
           <div className="space-y-6">
-            {supportsAdvancedCustomization && (
-              <>
-                <section className="glass-card p-5">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold">Branding</h2>
-                    {isTriviaSparkle && (
-                      <Button variant="secondary" size="sm" onClick={applyPlayteckPalette}>
-                        Aplicar paleta Playteck
-                      </Button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Color primario</label>
-                      <Input
-                        value={config.branding.primary_color}
-                        onChange={(e) => updateField(["branding", "primary_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Color secundario</label>
-                      <Input
-                        value={config.branding.secondary_color}
-                        onChange={(e) => updateField(["branding", "secondary_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Logo URL</label>
-                      <Input
-                        value={config.branding.logo_url}
-                        onChange={(e) => updateField(["branding", "logo_url"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Background URL</label>
-                      <Input
-                        value={config.branding.background_url}
-                        onChange={(e) => updateField(["branding", "background_url"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Imagen bienvenida URL</label>
-                      <Input
-                        value={config.branding.welcome_image_url}
-                        onChange={(e) => updateField(["branding", "welcome_image_url"], e.target.value)}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="text-sm text-muted-foreground">Texto de watermark (modo prueba)</label>
-                      <Input
-                        value={config.branding.watermark_text}
-                        onChange={(e) => updateField(["branding", "watermark_text"], e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                <section className="glass-card p-5">
-                  <h2 className="text-lg font-semibold mb-2">Assets del Contrato</h2>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Sube imagenes para logo, portada y fondos. Se guardan directo en este contrato.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="rounded-md border border-border p-3 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium">Logo</p>
-                        <p className="text-xs text-muted-foreground">Formato recomendado: PNG transparente.</p>
-                      </div>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingAsset === "logo"}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          void handleUploadAsset("logo", file);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      {config.branding.logo_url && (
-                        <img
-                          src={config.branding.logo_url}
-                          alt="Logo contrato"
-                          className="h-24 w-full rounded-md border border-border object-contain bg-muted/20"
-                        />
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!config.branding.logo_url || uploadingAsset === "logo"}
-                        onClick={() => void handleDeleteAsset("logo")}
-                      >
-                        {uploadingAsset === "logo" ? "Procesando..." : "Eliminar logo"}
-                      </Button>
-                    </div>
-
-                    <div className="rounded-md border border-border p-3 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium">Imagen de bienvenida</p>
-                        <p className="text-xs text-muted-foreground">Se usa en la cabecera del runner.</p>
-                      </div>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingAsset === "welcome_image"}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          void handleUploadAsset("welcome_image", file);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      {config.branding.welcome_image_url && (
-                        <img
-                          src={config.branding.welcome_image_url}
-                          alt="Welcome contrato"
-                          className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
-                        />
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!config.branding.welcome_image_url || uploadingAsset === "welcome_image"}
-                        onClick={() => void handleDeleteAsset("welcome_image")}
-                      >
-                        {uploadingAsset === "welcome_image" ? "Procesando..." : "Eliminar imagen"}
-                      </Button>
-                    </div>
-
-                    <div className="rounded-md border border-border p-3 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium">Fondo principal</p>
-                        <p className="text-xs text-muted-foreground">Se aplica al fondo de pantalla del juego.</p>
-                      </div>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingAsset === "background"}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          void handleUploadAsset("background", file);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      {config.branding.background_url && (
-                        <img
-                          src={config.branding.background_url}
-                          alt="Background contrato"
-                          className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
-                        />
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!config.branding.background_url || uploadingAsset === "background"}
-                        onClick={() => void handleDeleteAsset("background")}
-                      >
-                        {uploadingAsset === "background" ? "Procesando..." : "Eliminar fondo"}
-                      </Button>
-                    </div>
-
-                    <div className="rounded-md border border-border p-3 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium">Fondo de contenedor</p>
-                        <p className="text-xs text-muted-foreground">Se aplica a la tarjeta de pregunta.</p>
-                      </div>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingAsset === "container_background"}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          void handleUploadAsset("container_background", file);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      {config.visual.container_bg_image_url && (
-                        <img
-                          src={config.visual.container_bg_image_url}
-                          alt="Container background contrato"
-                          className="h-24 w-full rounded-md border border-border object-cover bg-muted/20"
-                        />
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!config.visual.container_bg_image_url || uploadingAsset === "container_background"}
-                        onClick={() => void handleDeleteAsset("container_background")}
-                      >
-                        {uploadingAsset === "container_background" ? "Procesando..." : "Eliminar fondo"}
-                      </Button>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
-            {supportsTriviaQuestions && (
-              <section className="glass-card p-5 space-y-5">
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    {isTriviaSparkle ? "Preguntas de Trivia Sparkle" : "Preguntas de Trivia"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Crea y edita las preguntas especificas de este contrato.
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Question set: {questionSetId ?? "Se crea automaticamente al guardar la primera pregunta"}
-                  </p>
+            {isTriviaSparkle ? (
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-6">
+                  <SparkleBrandingSection
+                    config={config}
+                    uploadingAsset={uploadingAsset}
+                    onApplyPlayteckPalette={applyPlayteckPalette}
+                    onUpdateField={updateField}
+                    onUploadAsset={handleUploadAsset}
+                    onDeleteAsset={handleDeleteAsset}
+                  />
+                  <SparkleIntroSection config={config} onUpdateField={updateField} />
+                  <SparkleRulesSection config={config} onUpdateField={updateField} />
+                  <SparkleQuestionsSection
+                    questionCount={sparkleQuestionCount}
+                    questions={sparkleQuestionForms}
+                    loading={sparkleQuestionsLoading}
+                    saving={sparkleSaving}
+                    uploadingImageKey={sparkleUploadingImageKey}
+                    onQuestionCountChange={setSparkleQuestionCount}
+                    onApplyQuestionCount={handleApplySparkleQuestionCount}
+                    onPromptChange={updateSparklePrompt}
+                    onTypeChange={updateSparkleType}
+                    onQuestionImageUpload={handleSparkleQuestionImageUpload}
+                    onQuestionImageClear={clearSparkleQuestionImage}
+                    onAnswerLabelChange={updateSparkleAnswerLabel}
+                    onAnswerImageUpload={handleSparkleAnswerImageUpload}
+                    onAnswerImageClear={clearSparkleAnswerImage}
+                    onSetCorrectAnswer={setSparkleCorrectAnswer}
+                    onAddAnswer={addSparkleAnswer}
+                    onRemoveAnswer={removeSparkleAnswer}
+                    onRemoveQuestion={handleRemoveSparkleQuestion}
+                    onSaveQuestions={handleSaveSparkleQuestions}
+                  />
+                  <SparkleVisualSection config={config} onUpdateField={updateField} />
                 </div>
 
-                
-
-                <div className="rounded-md border border-border p-4 space-y-4">
-                  <h3 className="text-sm font-semibold">Carga por cantidad</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Define cuántas preguntas tendrá la partida y completa cada una con sus opciones.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 items-end">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Cantidad de preguntas</label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={MAX_BULK_QUESTIONS}
-                        value={bulkQuestionCount}
-                        onChange={(e) => setBulkQuestionCount(e.target.value)}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="secondary" onClick={handleApplyBulkQuestionCount}>
-                        Generar formularios
-                      </Button>
-                      <Button
-                        variant="hero"
-                        disabled={bulkSaving || questionsSaving || bulkQuestionForms.length === 0}
-                        onClick={() => void handleSaveAllQuestions()}
-                      >
-                        {bulkSaving ? "Guardando..." : "Guardar todas"}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {bulkQuestionForms.length > 0 && (
-                    <div className="space-y-4">
-                      {bulkQuestionForms.map((form, questionIndex) => (
-                        <div key={`bulk-question-${questionIndex}`} className="rounded-md border border-border p-4 space-y-3">
-                          <p className="text-sm font-semibold">
-                            Pregunta {questionIndex + 1}
-                          </p>
-                          <Input
-                            value={form.text}
-                            onChange={(e) => updateBulkQuestionText(questionIndex, e.target.value)}
-                            placeholder={`Escribe la pregunta ${questionIndex + 1}...`}
-                          />
-                          <div className="space-y-2">
-                            {form.choices.map((choice, choiceIndex) => (
-                              <div key={`bulk-choice-${questionIndex}-${choiceIndex}`} className="flex items-center gap-2">
-                                <input
-                                  type="radio"
-                                  name={`bulk-correct-choice-${questionIndex}`}
-                                  checked={choice.is_correct}
-                                  onChange={() => setBulkCorrectChoice(questionIndex, choiceIndex)}
-                                />
-                                <Input
-                                  value={choice.text}
-                                  onChange={(e) => updateBulkChoiceText(questionIndex, choiceIndex, e.target.value)}
-                                  placeholder={`Opcion ${choiceIndex + 1}`}
-                                />
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={form.choices.length <= 2}
-                                  onClick={() => removeBulkChoiceField(questionIndex, choiceIndex)}
-                                >
-                                  Quitar
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={form.choices.length >= MAX_FORM_CHOICES}
-                            onClick={() => addBulkChoiceField(questionIndex)}
-                          >
-                            Agregar opcion
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-md border border-border p-4 space-y-4">
-                  <h3 className="text-sm font-semibold">
-                    {editingQuestionId ? `Editar pregunta #${editingQuestionId}` : "Nueva pregunta"}
-                  </h3>
-
-                  <div>
-                    <label className="text-sm text-muted-foreground">Pregunta</label>
-                    <Input
-                      value={questionForm.text}
-                      onChange={(e) => setQuestionForm((prev) => ({ ...prev, text: e.target.value }))}
-                      placeholder="Escribe la pregunta..."
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">Opciones (marca una correcta)</label>
-                    {questionForm.choices.map((choice, index) => (
-                      <div key={`choice-${index}`} className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="trivia-correct-choice"
-                          checked={choice.is_correct}
-                          onChange={() => setCorrectChoice(index)}
-                        />
-                        <Input
-                          value={choice.text}
-                          onChange={(e) => updateQuestionChoice(index, e.target.value)}
-                          placeholder={`Opcion ${index + 1}`}
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={questionForm.choices.length <= 2}
-                          onClick={() => removeChoiceField(index)}
-                        >
-                          Quitar
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      disabled={questionForm.choices.length >= MAX_FORM_CHOICES}
-                      onClick={addChoiceField}
-                    >
-                      Agregar opcion
-                    </Button>
-                    <Button variant="hero" disabled={questionsSaving} onClick={() => void handleSaveQuestion()}>
-                      {questionsSaving ? "Guardando..." : editingQuestionId ? "Actualizar pregunta" : "Guardar pregunta"}
-                    </Button>
-                    {editingQuestionId && (
-                      <Button variant="outline" onClick={handleCancelEditQuestion}>
-                        Cancelar edicion
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold">Preguntas cargadas ({questions.length})</h3>
-                  {questionsLoading && <p className="text-sm text-muted-foreground">Cargando preguntas...</p>}
-                  {!questionsLoading && questions.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Aun no hay preguntas para este contrato.</p>
-                  )}
-                  {!questionsLoading &&
-                    questions.map((question) => (
-                      <div key={question.id} className="rounded-md border border-border p-4">
-                        <p className="font-medium text-foreground">{question.text}</p>
-                        <ul className="mt-2 space-y-1 text-sm">
-                          {question.choices.map((choice) => (
-                            <li key={choice.id} className={choice.is_correct ? "text-primary font-medium" : "text-muted-foreground"}>
-                              {choice.is_correct ? "✓ " : "• "}
-                              {choice.text}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="mt-3 flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => handleEditQuestion(question)}>
-                            Editar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            disabled={questionsSaving}
-                            onClick={() => void handleDeleteQuestion(question.id)}
-                          >
-                            Eliminar
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </section>
-            )}
-
-            {supportsAdvancedCustomization && (
-              <>
-                <section className="glass-card p-5">
-                  <h2 className="text-lg font-semibold mb-4">Textos</h2>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Titulo de bienvenida</label>
-                      <Input
-                        value={config.texts.welcome_title}
-                        onChange={(e) => updateField(["texts", "welcome_title"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Subtitulo</label>
-                      <Input
-                        value={config.texts.welcome_subtitle}
-                        onChange={(e) => updateField(["texts", "welcome_subtitle"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Texto boton CTA</label>
-                      <Input
-                        value={config.texts.cta_button}
-                        onChange={(e) => updateField(["texts", "cta_button"], e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                <section className="glass-card p-5">
-                  <h2 className="text-lg font-semibold mb-4">Reglas de Trivia</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center justify-between rounded-md border border-border p-3">
-                      <span className="text-sm">Mostrar timer</span>
-                      <Switch
-                        checked={config.rules.show_timer}
-                        onCheckedChange={(checked) => updateField(["rules", "show_timer"], checked)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Segundos por pregunta</label>
-                      <Input
-                        type="number"
-                        min={5}
-                        value={config.rules.timer_seconds}
-                        onChange={(e) => updateField(["rules", "timer_seconds"], Number(e.target.value || 0))}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Puntos por respuesta correcta</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={config.rules.points_per_correct}
-                        onChange={(e) => updateField(["rules", "points_per_correct"], Number(e.target.value || 0))}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Cantidad maxima de preguntas</label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={config.rules.max_questions}
-                        onChange={(e) => updateField(["rules", "max_questions"], Number(e.target.value || 0))}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between rounded-md border border-border p-3">
-                      <span className="text-sm">Usar vidas</span>
-                      <Switch
-                        checked={config.rules.use_lives}
-                        onCheckedChange={(checked) => updateField(["rules", "use_lives"], checked)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Cantidad de vidas</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={10}
-                        disabled={!config.rules.use_lives}
-                        value={config.rules.lives}
-                        onChange={(e) => updateField(["rules", "lives"], Number(e.target.value || 0))}
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                <section className="glass-card p-5">
-                  <h2 className="text-lg font-semibold mb-4">Visual de Preguntas</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Fondo de pantalla</label>
-                      <Input
-                        type="color"
-                        value={config.visual.screen_background_color}
-                        onChange={(e) => updateField(["visual", "screen_background_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Fondo de pregunta</label>
-                      <Input
-                        type="color"
-                        value={config.visual.question_bg_color}
-                        onChange={(e) => updateField(["visual", "question_bg_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Borde de pregunta</label>
-                      <Input
-                        type="color"
-                        value={config.visual.question_border_color}
-                        onChange={(e) => updateField(["visual", "question_border_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Texto de pregunta</label>
-                      <Input
-                        type="color"
-                        value={config.visual.question_text_color}
-                        onChange={(e) => updateField(["visual", "question_text_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Fondo de opciones</label>
-                      <Input
-                        type="color"
-                        value={config.visual.option_bg_color}
-                        onChange={(e) => updateField(["visual", "option_bg_color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Borde de opciones</label>
-                      <Input
-                        type="color"
-                        value={config.visual.option_border_color}
-                        onChange={(e) => updateField(["visual", "option_border_color"], e.target.value)}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="text-sm text-muted-foreground">Fuente de pregunta</label>
-                      <Input
-                        value={config.visual.question_font_family}
-                        onChange={(e) => updateField(["visual", "question_font_family"], e.target.value)}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="text-sm text-muted-foreground">Imagen fondo del contenedor URL</label>
-                      <Input
-                        value={config.visual.container_bg_image_url}
-                        onChange={(e) => updateField(["visual", "container_bg_image_url"], e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                <section className="glass-card p-5">
-                  <h2 className="text-lg font-semibold mb-4">Watermark de Preview</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center justify-between rounded-md border border-border p-3">
-                      <span className="text-sm">Mostrar watermark</span>
-                      <Switch
-                        checked={config.watermark.enabled}
-                        onCheckedChange={(checked) => updateField(["watermark", "enabled"], checked)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Color</label>
-                      <Input
-                        type="color"
-                        value={config.watermark.color}
-                        onChange={(e) => updateField(["watermark", "color"], e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Opacidad ({watermarkOpacityLabel})</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={config.watermark.opacity}
-                        onChange={(e) => updateField(["watermark", "opacity"], Number(e.target.value || 0))}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Posicion</label>
-                      <select
-                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                        value={config.watermark.position}
-                        onChange={(e) => updateField(["watermark", "position"], e.target.value)}
-                      >
-                        <option value="top-left">Arriba izquierda</option>
-                        <option value="top-right">Arriba derecha</option>
-                        <option value="bottom-left">Abajo izquierda</option>
-                        <option value="bottom-right">Abajo derecha</option>
-                        <option value="center">Centro</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Tamano fuente</label>
-                      <Input
-                        type="number"
-                        min={12}
-                        max={200}
-                        value={config.watermark.font_size}
-                        onChange={(e) => updateField(["watermark", "font_size"], Number(e.target.value || 0))}
-                      />
-                    </div>
-                  </div>
-                </section>
-              </>
+                <SparklePreviewPanel config={config} questions={sparkleQuestionForms} />
+              </div>
+            ) : (
+              supportsTriviaQuestions && (
+                <TriviaQuestionsSection
+                  title="Preguntas de Trivia"
+                  description="Definí la cantidad de preguntas del contrato y completá todas las respuestas desde una sola vista."
+                  questionCount={bulkQuestionCount}
+                  forms={bulkQuestionForms}
+                  loading={triviaQuestionsLoading}
+                  saving={bulkSaving}
+                  onQuestionCountChange={setBulkQuestionCount}
+                  onApplyQuestionCount={handleApplyBulkQuestionCount}
+                  onQuestionTextChange={updateBulkQuestionText}
+                  onChoiceTextChange={updateBulkChoiceText}
+                  onSetCorrectChoice={setBulkCorrectChoice}
+                  onAddChoice={addBulkChoiceField}
+                  onRemoveChoice={removeBulkChoiceField}
+                  onRemoveQuestion={handleRemoveBulkQuestion}
+                  onSaveAll={handleSaveAllQuestions}
+                />
+              )
             )}
 
             <div className="flex items-center justify-end gap-3">
@@ -1243,14 +819,14 @@ export default function ContractCustomization() {
                 Volver
               </Button>
               <Button variant="outline" disabled={disabled} onClick={handlePreview}>
-                {starting ? "Abriendo..." : "Preview con watermark"}
+                {starting ? "Abriendo..." : "Vista previa"}
               </Button>
               <Button variant="hero" disabled={disabled} onClick={handleLaunchAuto}>
-                {starting ? "Abriendo..." : "Iniciar segun fecha"}
+                {starting ? "Abriendo..." : "Iniciar según fecha"}
               </Button>
-              {supportsAdvancedCustomization && (
+              {isTriviaSparkle && (
                 <Button variant="glow" disabled={disabled} onClick={handleSave}>
-                  {saving ? "Guardando..." : "Guardar customizacion"}
+                  {saving ? "Guardando..." : "Guardar customización"}
                 </Button>
               )}
             </div>

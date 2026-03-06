@@ -244,3 +244,111 @@ class GamesCatalogContractDatesTests(TestCase):
         body = create_conflict.json()
         self.assertEqual(body.get("error"), "ya_existe_contrato_en_esas_fechas")
         self.assertIn(today.isoformat(), body.get("fechas_conflictivas", []))
+
+
+class GamesCatalogContractTriviaQuestionsTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username="legacy_user",
+            email="legacy@example.com",
+            password="secret123",
+            first_name="Legacy Demo",
+        )
+        self.token = ApiToken.objects.create(user=self.user, key=ApiToken.generate_key())
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {self.token.key}"}
+
+        self.game = Game.objects.create(
+            slug="trivia-sparkle",
+            name="Trivia Sparkle",
+            runner_url="/runner/trivia-sparkle",
+            cost_per_play=1,
+            is_enabled=True,
+        )
+
+        today = timezone.localdate()
+        self.contract = ContratoJuego.objects.create(
+            usuario=self.user,
+            juego=self.game,
+            fecha_inicio=today,
+            fecha_fin=today + timedelta(days=1),
+            estado=ContratoJuego.Estado.ACTIVO,
+        )
+
+    def test_contract_questions_endpoint_creates_company_for_legacy_user(self):
+        self.assertIsNone(self.user.profile.company)
+
+        response = self.client.get(f"/api/contracts/{self.contract.id}/trivia/questions", **self.auth)
+
+        self.assertEqual(response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertIsNotNone(self.user.profile.company)
+        self.assertTrue(self.user.profile.company.name.startswith("Empresa de "))
+        self.assertEqual(response.json()["questions"], [])
+
+
+class GamesCatalogContractSparkleQuestionsTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username="sparkle_contract_user",
+            email="sparkle-contract@example.com",
+            password="secret123",
+        )
+        self.token = ApiToken.objects.create(user=self.user, key=ApiToken.generate_key())
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {self.token.key}"}
+        self.user.profile.company = Company.objects.create(name="Sparkle Co")
+        self.user.profile.save(update_fields=["company"])
+
+        self.game = Game.objects.create(
+            slug="trivia-sparkle",
+            name="Trivia Sparkle",
+            runner_url="/runner/trivia-sparkle",
+            cost_per_play=1,
+            is_enabled=True,
+        )
+
+        today = timezone.localdate()
+        self.contract = ContratoJuego.objects.create(
+            usuario=self.user,
+            juego=self.game,
+            fecha_inicio=today,
+            fecha_fin=today + timedelta(days=1),
+            estado=ContratoJuego.Estado.ACTIVO,
+        )
+
+    def test_save_and_fetch_sparkle_questions_with_images(self):
+        payload = {
+            "questions": [
+                {
+                    "id": "question_1",
+                    "type": "image_answers",
+                    "prompt": "¿Qué imagen corresponde a Playteck?",
+                    "questionImageUrl": "http://example.com/question.jpg",
+                    "correctAnswerId": "answer_1",
+                    "answers": [
+                        {"id": "answer_1", "label": "Logo 1", "imageUrl": "http://example.com/a1.jpg"},
+                        {"id": "answer_2", "label": "Logo 2", "imageUrl": "http://example.com/a2.jpg"},
+                    ],
+                }
+            ]
+        }
+
+        save_response = self.client.put(
+            f"/api/contracts/{self.contract.id}/trivia-sparkle/questions",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(save_response.status_code, 200)
+
+        fetch_response = self.client.get(
+            f"/api/contracts/{self.contract.id}/trivia-sparkle/questions",
+            **self.auth,
+        )
+        self.assertEqual(fetch_response.status_code, 200)
+        body = fetch_response.json()
+        self.assertEqual(len(body["questions"]), 1)
+        self.assertEqual(body["questions"][0]["type"], "image_answers")
+        self.assertEqual(body["questions"][0]["questionImageUrl"], "http://example.com/question.jpg")
+        self.assertEqual(body["questions"][0]["answers"][0]["imageUrl"], "http://example.com/a1.jpg")

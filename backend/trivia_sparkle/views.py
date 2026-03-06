@@ -4,16 +4,15 @@ import os
 import random
 import secrets
 import time
+
 from threading import Lock
 from uuid import uuid4
-
 from django.core import signing
 from django.core.signing import BadSignature, SignatureExpired
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-
 from games_catalog.models import GameSession
 from trivia.models import Question
 from .config_store import load_config, save_config
@@ -122,18 +121,19 @@ def _delete_admin_session(token: str) -> None:
 
 def _question_public_payload(question: dict) -> dict:
     """Transforma pregunta interna al payload público para frontend."""
+    question_image_url = question.get("questionImageUrl") or resolve_image_url(question.get("questionImageKey"))
     return {
         "id": question["id"],
         "type": question["type"],
         "prompt": question["prompt"],
         "questionImageKey": question.get("questionImageKey"),
-        "questionImageUrl": resolve_image_url(question.get("questionImageKey")),
+        "questionImageUrl": question_image_url,
         "answers": [
             {
                 "id": answer["id"],
                 "label": answer["label"],
                 "imageKey": answer.get("imageKey"),
-                "imageUrl": resolve_image_url(answer.get("imageKey")),
+                "imageUrl": answer.get("imageUrl") or resolve_image_url(answer.get("imageKey")),
             }
             for answer in question["answers"]
         ],
@@ -364,6 +364,47 @@ def _apply_contract_customization_to_sparkle_config(config: dict, session: GameS
 
 
 def _questions_from_question_set(session: GameSession) -> list[dict]:
+    state = session.client_state if isinstance(session.client_state, dict) else {}
+    customization = state.get("customization") if isinstance(state.get("customization"), dict) else {}
+    content = customization.get("content") if isinstance(customization.get("content"), dict) else {}
+    sparkle_questions = content.get("sparkle_questions") if isinstance(content.get("sparkle_questions"), list) else []
+    if sparkle_questions:
+        payload: list[dict] = []
+        for question in sparkle_questions:
+            if not isinstance(question, dict):
+                continue
+
+            answers = question.get("answers")
+            if not isinstance(answers, list) or len(answers) < 2:
+                continue
+
+            correct_answer_id = str(question.get("correctAnswerId") or "").strip()
+            if not correct_answer_id:
+                continue
+
+            payload.append(
+                {
+                    "id": str(question.get("id") or ""),
+                    "type": str(question.get("type") or "text_answers"),
+                    "prompt": str(question.get("prompt") or ""),
+                    "questionImageKey": question.get("questionImageKey"),
+                    "questionImageUrl": str(question.get("questionImageUrl") or "").strip() or None,
+                    "correctAnswerId": correct_answer_id,
+                    "answers": [
+                        {
+                            "id": str(answer.get("id") or ""),
+                            "label": str(answer.get("label") or ""),
+                            "imageKey": answer.get("imageKey"),
+                            "imageUrl": str(answer.get("imageUrl") or "").strip() or None,
+                        }
+                        for answer in answers
+                        if isinstance(answer, dict)
+                    ],
+                }
+            )
+        if payload:
+            return payload
+
     if not session.question_set_id:
         return []
 

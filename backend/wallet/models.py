@@ -18,8 +18,8 @@ class Wallet(models.Model):
 
     class Meta:
         db_table = "wallet_wallet"
-        verbose_name = "Wallet"
-        verbose_name_plural = "Wallets"
+        verbose_name = "Billetera"
+        verbose_name_plural = "Billeteras"
 
     def __str__(self) -> str:
         return f"Wallet(user_id={self.user_id}, balance={self.balance})"
@@ -27,10 +27,10 @@ class Wallet(models.Model):
 
 class LedgerEntry(models.Model):
     class Kind(models.TextChoices):
-        TOPUP = "TOPUP", "Topup"
-        SPEND = "SPEND", "Spend"
-        REFUND = "REFUND", "Refund"
-        ADJUST = "ADJUST", "Adjust"
+        TOPUP = "TOPUP", "Recarga"
+        SPEND = "SPEND", "Gasto"
+        REFUND = "REFUND", "Reembolso"
+        ADJUST = "ADJUST", "Ajuste"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -48,8 +48,8 @@ class LedgerEntry(models.Model):
 
     class Meta:
         db_table = "wallet_ledgerentry"
-        verbose_name = "Ledger Entry"
-        verbose_name_plural = "Ledger Entries"
+        verbose_name = "Movimiento de créditos"
+        verbose_name_plural = "Movimientos de créditos"
         indexes = [models.Index(fields=["user", "created_at"])]
 
     def __str__(self) -> str:
@@ -63,6 +63,8 @@ class CreditPack(models.Model):
     name = models.CharField(max_length=80)
     credits = models.PositiveIntegerField()
     price_ars = models.DecimalField(max_digits=12, decimal_places=2)
+    base_price_ars = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    discount_percent = models.PositiveIntegerField(default=0)
     active = models.BooleanField(default=True)
 
     # Para MercadoPago
@@ -73,8 +75,8 @@ class CreditPack(models.Model):
 
     class Meta:
         db_table = "wallet_creditpack"
-        verbose_name = "Credit Pack"
-        verbose_name_plural = "Credit Packs"
+        verbose_name = "Pack de créditos"
+        verbose_name_plural = "Packs de créditos"
         ordering = ["credits"]
 
     def __str__(self):
@@ -87,11 +89,11 @@ class WalletTopup(models.Model):
     Cuando MP confirma => se acredita wallet + ledger.
     """
     class Status(models.TextChoices):
-        PENDING = "PENDING", "Pending"
-        APPROVED = "APPROVED", "Approved"
-        REJECTED = "REJECTED", "Rejected"
-        CANCELLED = "CANCELLED", "Cancelled"
-        EXPIRED = "EXPIRED", "Expired"
+        PENDING = "PENDING", "Pendiente"
+        APPROVED = "APPROVED", "Aprobada"
+        REJECTED = "REJECTED", "Rechazada"
+        CANCELLED = "CANCELLED", "Cancelada"
+        EXPIRED = "EXPIRED", "Expirada"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -120,8 +122,8 @@ class WalletTopup(models.Model):
 
     class Meta:
         db_table = "wallet_topup"
-        verbose_name = "Wallet Topup"
-        verbose_name_plural = "Wallet Topups"
+        verbose_name = "Recarga de billetera"
+        verbose_name_plural = "Recargas de billetera"
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["user", "created_at"]),
@@ -131,7 +133,7 @@ class WalletTopup(models.Model):
         ]
 
     def __str__(self):
-        return f"Topup #{self.id} user={self.user_id} {self.credits}cr ${self.amount_ars} ({self.status})"
+        return f"Recarga #{self.id} user={self.user_id} {self.credits}cr ${self.amount_ars} ({self.status})"
 
     def mark_approved(self, mp_payment_id: str = ""):
         if self.status == self.Status.APPROVED:

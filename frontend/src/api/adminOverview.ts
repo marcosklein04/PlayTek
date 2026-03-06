@@ -13,6 +13,11 @@ export type AdminOverviewFilters = {
   q?: string;
 };
 
+export type AssignClientCreditsPayload = {
+  amount: number;
+  reason?: string;
+};
+
 export type SuperadminOverviewResponse = {
   ok: boolean;
   summary: {
@@ -115,5 +120,18 @@ export async function fetchAdminOverview(params?: AdminOverviewFilters) {
   const suffix = search.toString() ? `?${search.toString()}` : "";
   return apiFetch<SuperadminOverviewResponse>(`/api/admin/overview${suffix}`, {
     method: "GET",
+  });
+}
+
+export async function assignClientCredits(userId: number, payload: AssignClientCreditsPayload) {
+  return apiFetch<{
+    ok: boolean;
+    user_id: number;
+    username: string;
+    new_balance: number;
+    amount: number;
+  }>(`/api/admin/clients/${userId}/assign-credits`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }

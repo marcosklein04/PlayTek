@@ -28,10 +28,6 @@ urlpatterns = [
     path("api/admin/credit-packs/create", wallet_admin_views.admin_credit_packs_create),
     path("api/admin/credit-packs/<int:pack_id>", wallet_admin_views.admin_credit_packs_detail),
 
-    # admin credit packs
-    path("api/admin/credit-packs", wallet_views.admin_credit_packs),
-    path("api/admin/credit-packs/<int:pack_id>", wallet_views.admin_credit_packs_update),
-
     
     path("", include("games_catalog.ui_urls")),
 ]

@@ -4,3 +4,4 @@ from django.apps import AppConfig
 class GamesCatalogConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'games_catalog'
+    verbose_name = "Catálogo de juegos"

@@ -29,6 +29,8 @@ urlpatterns = [
     path("contracts/<int:contract_id>/launch", views.lanzar_juego_contrato),
     path("contracts/<int:contract_id>/customization", views.obtener_customizacion_contrato),
     path("contracts/<int:contract_id>/customization/save", views.guardar_customizacion_contrato),
+    path("contracts/<int:contract_id>/trivia-sparkle/questions", views.contrato_trivia_sparkle_questions),
+    path("contracts/<int:contract_id>/trivia-sparkle/images", views.contrato_trivia_sparkle_images),
     path("contracts/<int:contract_id>/trivia/questions", views.contrato_trivia_questions),
     path("contracts/<int:contract_id>/trivia/questions/import-csv", views.contrato_trivia_import_csv),
     path("contracts/<int:contract_id>/trivia/questions/<int:question_id>", views.contrato_trivia_question_detalle),

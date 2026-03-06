@@ -1,5 +1,4 @@
 import json
-from decimal import Decimal, InvalidOperation
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -7,13 +6,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from api_auth.auth import token_required, admin_required
 from wallet.models import CreditPack
-
-
-def _to_decimal(v):
-    try:
-        return Decimal(str(v))
-    except (InvalidOperation, TypeError):
-        return None
+from wallet.pack_utils import resolve_pack_pricing, serialize_pack
 
 
 @require_GET
@@ -22,18 +15,7 @@ def _to_decimal(v):
 def admin_credit_packs_list(request):
     qs = CreditPack.objects.all().order_by("credits")
     return JsonResponse({
-        "resultados": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "credits": p.credits,
-                "price_ars": str(p.price_ars),
-                "mp_title": p.mp_title or "",
-                "mp_description": p.mp_description or "",
-                "active": bool(p.active),
-            }
-            for p in qs
-        ]
+        "resultados": [serialize_pack(p) for p in qs]
     })
 
 
@@ -49,7 +31,6 @@ def admin_credit_packs_create(request):
 
     name = (data.get("name") or "").strip()
     credits = data.get("credits")
-    price_ars = _to_decimal(data.get("price_ars"))
     mp_title = (data.get("mp_title") or "").strip()
     mp_description = (data.get("mp_description") or "").strip()
     active = bool(data.get("active", True))
@@ -58,13 +39,17 @@ def admin_credit_packs_create(request):
         return JsonResponse({"error": "name_requerido"}, status=400)
     if not isinstance(credits, int) or credits <= 0:
         return JsonResponse({"error": "credits_invalido"}, status=400)
-    if price_ars is None or price_ars < 0:
-        return JsonResponse({"error": "price_ars_invalido"}, status=400)
+
+    price_ars, discount_percent, base_price_ars = resolve_pack_pricing(data)
+    if price_ars is None:
+        return JsonResponse({"error": base_price_ars}, status=400)
 
     p = CreditPack.objects.create(
         name=name,
         credits=credits,
         price_ars=price_ars,
+        base_price_ars=base_price_ars,
+        discount_percent=discount_percent,
         mp_title=mp_title,
         mp_description=mp_description,
         active=active,
@@ -72,15 +57,7 @@ def admin_credit_packs_create(request):
 
     return JsonResponse({
         "ok": True,
-        "pack": {
-            "id": p.id,
-            "name": p.name,
-            "credits": p.credits,
-            "price_ars": str(p.price_ars),
-            "mp_title": p.mp_title or "",
-            "mp_description": p.mp_description or "",
-            "active": bool(p.active),
-        }
+        "pack": serialize_pack(p)
     }, status=201)
 
 
@@ -112,11 +89,13 @@ def admin_credit_packs_detail(request, pack_id: int):
             return JsonResponse({"error": "credits_invalido"}, status=400)
         p.credits = data["credits"]
 
-    if "price_ars" in data:
-        d = _to_decimal(data.get("price_ars"))
-        if d is None or d < 0:
-            return JsonResponse({"error": "price_ars_invalido"}, status=400)
-        p.price_ars = d
+    if any(field in data for field in ("price_ars", "base_price_ars", "discount_percent")):
+        price_ars, discount_percent, base_price_ars = resolve_pack_pricing(data, current_pack=p)
+        if price_ars is None:
+            return JsonResponse({"error": base_price_ars}, status=400)
+        p.price_ars = price_ars
+        p.base_price_ars = base_price_ars
+        p.discount_percent = discount_percent
 
     if "mp_title" in data:
         p.mp_title = (data.get("mp_title") or "").strip()
@@ -134,13 +113,5 @@ def admin_credit_packs_detail(request, pack_id: int):
 
     return JsonResponse({
         "ok": True,
-        "pack": {
-            "id": p.id,
-            "name": p.name,
-            "credits": p.credits,
-            "price_ars": str(p.price_ars),
-            "mp_title": p.mp_title or "",
-            "mp_description": p.mp_description or "",
-            "active": bool(p.active),
-        }
+        "pack": serialize_pack(p)
     })

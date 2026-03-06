@@ -89,3 +89,50 @@ class TriviaSparkleRunnerBindingTests(TestCase):
         payload = config_response.json()
         self.assertEqual(config_response.status_code, 200)
         self.assertFalse(payload.get("preview_mode"))
+
+    def test_game_question_returns_contract_sparkle_questions_with_images(self):
+        session = GameSession.objects.create(
+            user=self.user,
+            game=self.game,
+            status=GameSession.Status.ACTIVE,
+            cost_charged=0,
+            client_state={
+                "juego": "trivia-sparkle",
+                "preview_mode": False,
+                "customization": {
+                    "content": {
+                        "sparkle_questions": [
+                            {
+                                "id": "question_1",
+                                "type": "image_answers",
+                                "prompt": "Elegí la imagen correcta",
+                                "questionImageUrl": "http://example.com/question.jpg",
+                                "correctAnswerId": "answer_1",
+                                "answers": [
+                                    {"id": "answer_1", "label": "Opción 1", "imageUrl": "http://example.com/a1.jpg"},
+                                    {"id": "answer_2", "label": "Opción 2", "imageUrl": "http://example.com/a2.jpg"},
+                                ],
+                            }
+                        ]
+                    }
+                },
+            },
+        )
+        session.runner_token = secrets.token_urlsafe(24)
+        session.save(update_fields=["runner_token"])
+        self._bind_runner_cookie(session)
+
+        start_response = self.client.post(
+            "/api/trivia-sparkle/game/start",
+            data="{}",
+            content_type="application/json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+
+        question_response = self.client.get(f"/api/trivia-sparkle/game/{session.id}/question")
+        payload = question_response.json()
+
+        self.assertEqual(question_response.status_code, 200)
+        self.assertEqual(payload["question"]["type"], "image_answers")
+        self.assertEqual(payload["question"]["questionImageUrl"], "http://example.com/question.jpg")
+        self.assertEqual(payload["question"]["answers"][0]["imageUrl"], "http://example.com/a1.jpg")

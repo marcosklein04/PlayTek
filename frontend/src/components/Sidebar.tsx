@@ -46,7 +46,7 @@ export function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div className="p-6 border-b border-sidebar-border">
+      <div className={cn("border-b border-sidebar-border flex justify-center", collapsed ? "px-3 py-5" : "px-6 py-7")}>
         <PlaytekLogo size={collapsed ? "sm" : "md"} showText={!collapsed} />
       </div>
 

@@ -20,11 +20,12 @@ from games_catalog.models import ContratoJuego, Game
 from api_auth.auth import token_required
 from .mp import create_preference
 from .models import Wallet, LedgerEntry, CreditPack, WalletTopup
+from .pack_utils import serialize_pack
 
 User = get_user_model()
 
 def _require_admin(user):
-    return bool(user and user.is_superuser)
+    return bool(user and (user.is_superuser or user.is_staff))
 
 
 def _company_name_for_user(user):
@@ -218,7 +219,7 @@ def admin_super_overview(request):
     )
     clients_qs = (
         User.objects
-        .filter(is_superuser=False)
+        .filter(is_superuser=False, is_staff=False)
         .select_related("profile__company")
         .order_by("username")
     )
@@ -442,17 +443,66 @@ def admin_super_overview(request):
 def credit_packs(request):
     packs = CreditPack.objects.filter(active=True).order_by("credits")
     return JsonResponse({
-        "resultados": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "credits": p.credits,
-                "price_ars": str(p.price_ars),
-                "mp_title": p.mp_title,
-                "mp_description": p.mp_description,
-            }
-            for p in packs
-        ]
+        "resultados": [serialize_pack(p) for p in packs]
+    })
+
+
+@csrf_exempt
+@require_POST
+@token_required
+def admin_assign_client_credits(request, user_id: int):
+    if not _require_admin(request.user):
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8")) if request.body else {}
+    except Exception:
+        return JsonResponse({"error": "json_invalido"}, status=400)
+
+    amount = _parse_positive_int(payload.get("amount"))
+    reason = (payload.get("reason") or "").strip()
+
+    if amount is None:
+        return JsonResponse({"error": "amount_invalido"}, status=400)
+
+    try:
+        client_user = (
+            User.objects
+            .select_related("profile__company")
+            .get(id=user_id, is_superuser=False, is_staff=False)
+        )
+    except User.DoesNotExist:
+        return JsonResponse({"error": "cliente_no_encontrado"}, status=404)
+
+    reference_id = reason[:128] if reason else f"admin:{request.user.id}"
+
+    try:
+        with transaction.atomic():
+            wallet, _ = Wallet.objects.select_for_update().get_or_create(
+                user=client_user,
+                defaults={"balance": 0},
+            )
+
+            Wallet.objects.filter(pk=wallet.pk).update(balance=F("balance") + amount)
+
+            LedgerEntry.objects.create(
+                user=client_user,
+                kind=LedgerEntry.Kind.ADJUST,
+                amount=amount,
+                reference_type="admin_manual_credit",
+                reference_id=reference_id,
+            )
+
+            wallet.refresh_from_db(fields=["balance"])
+    except Exception as exc:
+        return JsonResponse({"error": "error_interno", "detalle": str(exc)}, status=500)
+
+    return JsonResponse({
+        "ok": True,
+        "user_id": client_user.id,
+        "username": client_user.username,
+        "new_balance": wallet.balance,
+        "amount": amount,
     })
 
 

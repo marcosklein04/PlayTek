@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Search, Grid, List } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Sidebar } from "@/components/Sidebar";
 import { GameCard } from "@/components/GameCard";
 import { GameDetailModal } from "@/components/GameDetailModal";
 import { useAuth } from "@/context/AuthContext";
-import { categories } from "@/data/games";
 import { fetchGames, previewGame } from "@/api/games";
 import { Game } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -19,13 +15,10 @@ import { isGameAvailable } from "@/lib/gameAvailability";
 export default function Catalog() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [contractGame, setContractGame] = useState<Game | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  const { contractedGames, refreshContractedGames } = useAuth();
+  const { user, contractedGames, refreshContractedGames } = useAuth();
   const { toast } = useToast();
 
   const [games, setGames] = useState<Game[]>([]);
@@ -63,7 +56,7 @@ export default function Catalog() {
     const gameToOpen = games.find((game) => game.id === openGame);
     if (!gameToOpen) return;
 
-    if (!isGameAvailable(gameToOpen.id)) {
+    if (!isGameAvailable(gameToOpen.id, user?.role)) {
       notifyUnavailableGame();
       params.delete("open_game");
       const nextSearch = params.toString();
@@ -89,24 +82,15 @@ export default function Catalog() {
       },
       { replace: true },
     );
-  }, [games, location.pathname, location.search, navigate, notifyUnavailableGame]);
+  }, [games, location.pathname, location.search, navigate, notifyUnavailableGame, user?.role]);
 
   const filteredGames = useMemo(() => {
-    return games.filter((game) => {
-      const matchesSearch =
-        game.name.toLowerCase().includes(search.toLowerCase()) ||
-        game.shortDescription.toLowerCase().includes(search.toLowerCase());
-
-      const matchesCategory =
-        selectedCategory === "all" || game.category === selectedCategory;
-
-      return matchesSearch && matchesCategory;
-    });
-  }, [games, search, selectedCategory]);
+    return games;
+  }, [games]);
 
   const handleOpenContract = (gameId: string) => {
     const g = games.find((x) => x.id === gameId) || null;
-    if (g && !isGameAvailable(g.id)) {
+    if (g && !isGameAvailable(g.id, user?.role)) {
       notifyUnavailableGame();
       return;
     }
@@ -115,7 +99,7 @@ export default function Catalog() {
   };
 
   const handlePreviewGame = async (gameId: string) => {
-    if (!isGameAvailable(gameId)) {
+    if (!isGameAvailable(gameId, user?.role)) {
       notifyUnavailableGame();
       return;
     }
@@ -151,53 +135,6 @@ export default function Catalog() {
           </p>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex flex-col lg:flex-row gap-4 mb-8"
-        >
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <Input
-              placeholder="Buscar juegos..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {categories.map((cat) => (
-              <Button
-                key={cat.id}
-                variant={selectedCategory === cat.id ? "glow" : "glass"}
-                size="sm"
-                onClick={() => setSelectedCategory(cat.id)}
-              >
-                {cat.label}
-              </Button>
-            ))}
-          </div>
-
-          <div className="flex gap-1 ml-auto">
-            <Button
-              variant={viewMode === "grid" ? "secondary" : "ghost"}
-              size="icon"
-              onClick={() => setViewMode("grid")}
-            >
-              <Grid className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "secondary" : "ghost"}
-              size="icon"
-              onClick={() => setViewMode("list")}
-            >
-              <List className="w-4 h-4" />
-            </Button>
-          </div>
-        </motion.div>
-
         {loading && <p className="text-sm text-muted-foreground mb-6">Cargando juegos...</p>}
 
         <motion.p
@@ -210,7 +147,7 @@ export default function Catalog() {
           {filteredGames.length !== 1 ? "s" : ""}
         </motion.p>
 
-        <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "flex flex-col gap-4"}>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredGames.map((game, idx) => {
             const isContracted = contractedGames.some((cg) => cg.id === game.id);
 
@@ -222,7 +159,7 @@ export default function Catalog() {
                 onViewDetails={setSelectedGame}
                 isContracted={isContracted}
                 onContract={handleOpenContract}
-                isAvailable={isGameAvailable(game.id)}
+                isAvailable={isGameAvailable(game.id, user?.role)}
                 onUnavailableClick={notifyUnavailableGame}
               />
             );

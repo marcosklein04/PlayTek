@@ -32,6 +32,8 @@ export type AdminCreditPack = {
   name: string;
   credits: number;
   price_ars: string;
+  base_price_ars: string;
+  discount_percent: number;
   mp_title: string;
   mp_description: string;
   active: boolean;
@@ -47,14 +49,16 @@ export async function adminFetchCreditPacks() {
 export async function adminCreateCreditPack(payload: {
   name: string;
   credits: number;
-  price_ars: string;
+  price_ars?: string;
+  base_price_ars?: string;
+  discount_percent?: number;
   mp_title?: string;
   mp_description?: string;
   active?: boolean;
 }) {
   return http<{ ok: boolean; pack: AdminCreditPack }>(`/api/admin/credit-packs/create`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
   });
 }

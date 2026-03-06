@@ -84,6 +84,10 @@ export type TriviaCustomization = {
     position: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
     font_size: number;
   };
+  content?: {
+    question_set_id?: number | null;
+    sparkle_questions?: ContractSparkleQuestion[];
+  };
 };
 
 export type ContractCustomizationResponse = {
@@ -117,6 +121,27 @@ export type ContractTriviaQuestionsResponse = {
   contract_id: number;
   question_set_id: number | null;
   questions: ContractTriviaQuestion[];
+};
+
+export type ContractSparkleAnswer = {
+  id: string;
+  label: string;
+  imageUrl: string;
+};
+
+export type ContractSparkleQuestion = {
+  id: string;
+  type: "text_answers" | "image_answers";
+  prompt: string;
+  questionImageUrl: string;
+  correctAnswerId: string;
+  answers: ContractSparkleAnswer[];
+};
+
+export type ContractSparkleQuestionsResponse = {
+  ok: boolean;
+  contract_id: number;
+  questions: ContractSparkleQuestion[];
 };
 
 export async function fetchMyContracts() {
@@ -212,6 +237,31 @@ export async function importContractTriviaCsv(contractId: number, file: File, re
     method: "POST",
     body,
   });
+}
+
+export async function fetchContractSparkleQuestions(contractId: number) {
+  return apiFetch<ContractSparkleQuestionsResponse>(`/api/contracts/${contractId}/trivia-sparkle/questions`, {
+    method: "GET",
+  });
+}
+
+export async function saveContractSparkleQuestions(contractId: number, questions: ContractSparkleQuestion[]) {
+  return apiFetch<ContractSparkleQuestionsResponse>(`/api/contracts/${contractId}/trivia-sparkle/questions`, {
+    method: "PUT",
+    body: JSON.stringify({ questions }),
+  });
+}
+
+export async function uploadContractSparkleImage(contractId: number, file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return apiFetch<{ ok: boolean; contract_id: number; image_url: string }>(
+    `/api/contracts/${contractId}/trivia-sparkle/images`,
+    {
+      method: "POST",
+      body,
+    },
+  );
 }
 
 export type ContractStartResponse = {

@@ -7,10 +7,15 @@ from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from .models import ApiToken
 from django.contrib.auth import get_user_model
+from accounts.services import ensure_company_for_user
 from wallet.models import Wallet
 from .auth import token_required
 
 User = get_user_model()
+
+
+def _user_role(user) -> str:
+    return "admin" if (user.is_superuser or user.is_staff) else "client"
 
 
 def _build_unique_username_from_email(email: str) -> str:
@@ -29,6 +34,9 @@ def _build_unique_username_from_email(email: str) -> str:
 
 def _company_name_for_user(user):
     company = getattr(getattr(user, "profile", None), "company", None)
+    if not company and getattr(user, "pk", None):
+        fresh_user = User.objects.select_related("profile__company").filter(pk=user.pk).first()
+        company = getattr(getattr(fresh_user, "profile", None), "company", None)
     if not company:
         return ""
     # soporta distintos nombres de campo
@@ -50,6 +58,7 @@ def register(request):
     email = (data.get("email") or data.get("username") or "").strip().lower()
     password = (data.get("password") or "").strip()
     name = (data.get("name") or "").strip()
+    organization = (data.get("organization") or "").strip()
 
     if not email or not password:
         return JsonResponse({"error": "email_y_password_requeridos"}, status=400)
@@ -69,6 +78,8 @@ def register(request):
         user.first_name = name
         user.save(update_fields=["first_name"])
 
+    ensure_company_for_user(user, preferred_name=organization)
+
     token = ApiToken.objects.create(user=user, key=ApiToken.generate_key())
     Wallet.objects.get_or_create(user=user, defaults={"balance": 0})
 
@@ -81,7 +92,7 @@ def register(request):
             "email": user.email or "",
             "name": user.get_full_name() or user.email or user.username,
             "organization": _company_name_for_user(user),
-            "role": "admin" if user.is_superuser else "client",
+            "role": _user_role(user),
         }
     }, status=201)
 
@@ -119,7 +130,7 @@ def login(request):
             "email": user.email or "",
             "name": user.get_full_name() or user.email or user.username,
             "organization": _company_name_for_user(user),
-            "role": "admin" if user.is_superuser else "client",
+            "role": _user_role(user),
         }
     })
 
@@ -133,5 +144,5 @@ def me(request):
         "email": user.email or "",
         "name": user.get_full_name() or user.email or user.username,
         "organization": _company_name_for_user(user),
-        "role": "admin" if user.is_superuser else "client",
+        "role": _user_role(user),
     })

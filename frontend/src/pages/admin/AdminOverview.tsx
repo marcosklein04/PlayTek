@@ -3,7 +3,12 @@ import { Sidebar } from "@/components/Sidebar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { AdminOverviewFilters, fetchAdminOverview, SuperadminOverviewResponse } from "@/api/adminOverview";
+import {
+  AdminOverviewFilters,
+  assignClientCredits,
+  fetchAdminOverview,
+  SuperadminOverviewResponse,
+} from "@/api/adminOverview";
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
@@ -46,6 +51,10 @@ export default function AdminOverview() {
   const [contractStatus, setContractStatus] = useState("");
   const [transactionKind, setTransactionKind] = useState("");
   const [topupStatus, setTopupStatus] = useState("");
+  const [creditClientId, setCreditClientId] = useState("");
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditReason, setCreditReason] = useState("");
+  const [crediting, setCrediting] = useState(false);
 
   const load = async (filters?: AdminOverviewFilters) => {
     try {
@@ -97,6 +106,49 @@ export default function AdminOverview() {
   useEffect(() => {
     void load();
   }, []);
+
+  const handleAssignCredits = async () => {
+    const userId = Number(creditClientId);
+    const amount = Number(creditAmount);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      toast({
+        title: "Cliente inválido",
+        description: "Seleccioná un cliente para acreditar créditos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!Number.isInteger(amount) || amount <= 0) {
+      toast({
+        title: "Cantidad inválida",
+        description: "Ingresá una cantidad entera de créditos mayor a 0.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setCrediting(true);
+      const res = await assignClientCredits(userId, {
+        amount,
+        reason: creditReason.trim() || undefined,
+      });
+      setCreditAmount("");
+      setCreditReason("");
+      await load(buildFilters());
+      toast({
+        title: "Créditos acreditados",
+        description: `${res.amount} créditos acreditados a ${res.username}. Nuevo saldo: ${res.new_balance}.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron acreditar los créditos";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setCrediting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -274,6 +326,59 @@ export default function AdminOverview() {
               </div>
             </div>
 
+            <section className="glass-card p-4 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Asignar créditos a clientes</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Ajuste manual con asiento en wallet para soporte comercial o compensaciones.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">Cliente</label>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={creditClientId}
+                    onChange={(e) => setCreditClientId(e.target.value)}
+                  >
+                    <option value="">Seleccionar cliente</option>
+                    {data.clients.map((client) => (
+                      <option key={client.user_id} value={client.user_id}>
+                        {client.username} {client.company ? `· ${client.company}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground">Créditos a acreditar</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={creditAmount}
+                    onChange={(e) => setCreditAmount(e.target.value)}
+                    placeholder="Ej: 50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground">Motivo / referencia</label>
+                  <Input
+                    value={creditReason}
+                    onChange={(e) => setCreditReason(e.target.value)}
+                    placeholder="Bonificación comercial"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <Button variant="glow" disabled={crediting} onClick={handleAssignCredits} className="w-full">
+                    {crediting ? "Acreditando..." : "Asignar créditos"}
+                  </Button>
+                </div>
+              </div>
+            </section>
+
             <section className="glass-card p-4 space-y-3">
               <h2 className="text-lg font-semibold">Contratos</h2>
               <div className="overflow-auto">
@@ -319,6 +424,7 @@ export default function AdminOverview() {
                       <th className="py-2 pr-3">Empresa</th>
                       <th className="py-2 pr-3">Saldo</th>
                       <th className="py-2 pr-3">Alta</th>
+                      <th className="py-2 pr-3">Acción rápida</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -329,6 +435,15 @@ export default function AdminOverview() {
                         <td className="py-2 pr-3">{client.company || "—"}</td>
                         <td className="py-2 pr-3">{client.wallet_balance} créditos</td>
                         <td className="py-2 pr-3">{formatDate(client.joined_at)}</td>
+                        <td className="py-2 pr-3">
+                          <Button
+                            variant="outline"
+                            className="h-8 px-3"
+                            onClick={() => setCreditClientId(String(client.user_id))}
+                          >
+                            Seleccionar
+                          </Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

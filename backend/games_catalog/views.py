@@ -39,7 +39,9 @@ ALLOWED_ASSET_CONTENT_TYPES = {
 }
 MAX_ASSET_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
 MAX_TRIVIA_CHOICES = 6
+MAX_SPARKLE_QUESTIONS = 50
 CONTRACT_TRIVIA_GAMES = {"trivia", "trivia-sparkle"}
+SPARKLE_QUESTION_TYPES = {"text_answers", "image_answers"}
 
 
 def _parse_date(s: str):
@@ -139,6 +141,7 @@ def _default_customization_for_game(game_slug: str) -> dict:
             },
             "content": {
                 "question_set_id": None,
+                "sparkle_questions": [],
             },
         }
 
@@ -263,6 +266,46 @@ def _normalize_asset_urls_for_storage(config: dict) -> dict:
             if not media_url.endswith("/"):
                 media_url = f"{media_url}/"
             _nested_set(normalized, path, f"{media_url}{storage_path}")
+
+    content = normalized.get("content")
+    sparkle_questions = content.get("sparkle_questions") if isinstance(content, dict) else None
+    if isinstance(sparkle_questions, list):
+        normalized_questions = []
+        for question in sparkle_questions:
+            if not isinstance(question, dict):
+                continue
+
+            next_question = deepcopy(question)
+            question_image_url = next_question.get("questionImageUrl")
+            if isinstance(question_image_url, str):
+                storage_path = _media_path_from_url(question_image_url.strip())
+                if storage_path:
+                    media_url = getattr(settings, "MEDIA_URL", "/media/")
+                    if not media_url.endswith("/"):
+                        media_url = f"{media_url}/"
+                    next_question["questionImageUrl"] = f"{media_url}{storage_path}"
+
+            answers = next_question.get("answers")
+            if isinstance(answers, list):
+                next_answers = []
+                for answer in answers:
+                    if not isinstance(answer, dict):
+                        continue
+                    next_answer = deepcopy(answer)
+                    image_url = next_answer.get("imageUrl")
+                    if isinstance(image_url, str):
+                        storage_path = _media_path_from_url(image_url.strip())
+                        if storage_path:
+                            media_url = getattr(settings, "MEDIA_URL", "/media/")
+                            if not media_url.endswith("/"):
+                                media_url = f"{media_url}/"
+                            next_answer["imageUrl"] = f"{media_url}{storage_path}"
+                    next_answers.append(next_answer)
+                next_question["answers"] = next_answers
+
+            normalized_questions.append(next_question)
+
+        content["sparkle_questions"] = normalized_questions
     return normalized
 
 
@@ -272,6 +315,36 @@ def _absolutize_asset_urls_for_response(request, config: dict) -> dict:
         value = _nested_get(output, path)
         if isinstance(value, str) and value.strip():
             _nested_set(output, path, _to_absolute_url(request, value.strip()))
+
+    content = output.get("content")
+    sparkle_questions = content.get("sparkle_questions") if isinstance(content, dict) else None
+    if isinstance(sparkle_questions, list):
+        normalized_questions = []
+        for question in sparkle_questions:
+            if not isinstance(question, dict):
+                continue
+
+            next_question = deepcopy(question)
+            question_image_url = next_question.get("questionImageUrl")
+            if isinstance(question_image_url, str) and question_image_url.strip():
+                next_question["questionImageUrl"] = _to_absolute_url(request, question_image_url.strip())
+
+            answers = next_question.get("answers")
+            if isinstance(answers, list):
+                next_answers = []
+                for answer in answers:
+                    if not isinstance(answer, dict):
+                        continue
+                    next_answer = deepcopy(answer)
+                    image_url = next_answer.get("imageUrl")
+                    if isinstance(image_url, str) and image_url.strip():
+                        next_answer["imageUrl"] = _to_absolute_url(request, image_url.strip())
+                    next_answers.append(next_answer)
+                next_question["answers"] = next_answers
+
+            normalized_questions.append(next_question)
+
+        content["sparkle_questions"] = normalized_questions
     return output
 
 
@@ -317,6 +390,125 @@ def _is_contract_editable(contrato: ContratoJuego) -> bool:
     return contrato.estado not in [ContratoJuego.Estado.CANCELADO, ContratoJuego.Estado.FINALIZADO]
 
 
+def _new_sparkle_item_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(6)}"
+
+
+def _normalize_contract_sparkle_questions_payload(raw_questions) -> list[dict]:
+    if not isinstance(raw_questions, list):
+        return []
+
+    normalized_questions: list[dict] = []
+    for question in raw_questions:
+        if not isinstance(question, dict):
+            continue
+
+        answers_raw = question.get("answers") if isinstance(question.get("answers"), list) else []
+        normalized_answers = []
+        for answer in answers_raw:
+            if not isinstance(answer, dict):
+                continue
+            normalized_answers.append(
+                {
+                    "id": str(answer.get("id") or _new_sparkle_item_id("answer")).strip(),
+                    "label": str(answer.get("label") or "").strip(),
+                    "imageUrl": str(answer.get("imageUrl") or "").strip(),
+                }
+            )
+
+        normalized_questions.append(
+            {
+                "id": str(question.get("id") or _new_sparkle_item_id("question")).strip(),
+                "type": str(question.get("type") or "text_answers").strip(),
+                "prompt": str(question.get("prompt") or "").strip(),
+                "questionImageUrl": str(question.get("questionImageUrl") or "").strip(),
+                "correctAnswerId": str(question.get("correctAnswerId") or "").strip(),
+                "answers": normalized_answers,
+            }
+        )
+
+    return normalized_questions
+
+
+def _validate_contract_sparkle_questions_payload(questions: list[dict]):
+    if len(questions) > MAX_SPARKLE_QUESTIONS:
+        return JsonResponse(
+            {"error": "demasiadas_preguntas", "max_questions": MAX_SPARKLE_QUESTIONS},
+            status=400,
+        )
+
+    question_ids = set()
+    for index, question in enumerate(questions):
+        label = f"pregunta {index + 1}"
+        question_id = question.get("id")
+        if not question_id:
+            return JsonResponse({"error": "sparkle_question_id_invalido", "question": index + 1}, status=400)
+        if question_id in question_ids:
+            return JsonResponse({"error": "sparkle_question_id_duplicado", "question": index + 1}, status=400)
+        question_ids.add(question_id)
+
+        question_type = question.get("type")
+        if question_type not in SPARKLE_QUESTION_TYPES:
+            return JsonResponse({"error": "sparkle_tipo_invalido", "question": index + 1}, status=400)
+
+        if not question.get("prompt"):
+            return JsonResponse({"error": "sparkle_prompt_requerido", "question": index + 1}, status=400)
+
+        answers = question.get("answers")
+        if not isinstance(answers, list) or len(answers) < 2 or len(answers) > MAX_TRIVIA_CHOICES:
+            return JsonResponse(
+                {
+                    "error": "sparkle_respuestas_invalidas",
+                    "question": index + 1,
+                    "min_answers": 2,
+                    "max_answers": MAX_TRIVIA_CHOICES,
+                },
+                status=400,
+            )
+
+        answer_ids = set()
+        for answer_index, answer in enumerate(answers):
+            answer_id = answer.get("id")
+            if not answer_id:
+                return JsonResponse(
+                    {"error": "sparkle_answer_id_invalido", "question": index + 1, "answer": answer_index + 1},
+                    status=400,
+                )
+            if answer_id in answer_ids:
+                return JsonResponse(
+                    {"error": "sparkle_answer_id_duplicado", "question": index + 1, "answer": answer_index + 1},
+                    status=400,
+                )
+            answer_ids.add(answer_id)
+
+            if not str(answer.get("label") or "").strip():
+                return JsonResponse(
+                    {"error": "sparkle_answer_label_requerido", "question": index + 1, "answer": answer_index + 1},
+                    status=400,
+                )
+
+            if question_type == "image_answers" and not str(answer.get("imageUrl") or "").strip():
+                return JsonResponse(
+                    {"error": "sparkle_answer_image_requerida", "question": index + 1, "answer": answer_index + 1},
+                    status=400,
+                )
+
+        if question.get("correctAnswerId") not in answer_ids:
+            return JsonResponse(
+                {"error": "sparkle_correct_answer_invalida", "question": index + 1},
+                status=400,
+            )
+
+    return None
+
+
+def _get_contract_sparkle_questions(config: dict) -> list[dict]:
+    content = config.get("content")
+    questions = content.get("sparkle_questions") if isinstance(content, dict) else None
+    normalized_questions = _normalize_contract_sparkle_questions_payload(questions)
+    return normalized_questions
+
+
 def _set_contract_customization_question_set_id(contrato: ContratoJuego, question_set_id: int | None):
     default_config = _default_customization_for_game(contrato.juego.slug)
     customization, _ = GameCustomization.objects.get_or_create(
@@ -338,7 +530,7 @@ def _set_contract_customization_question_set_id(contrato: ContratoJuego, questio
 
 
 def _get_or_create_contract_trivia_question_set(contrato: ContratoJuego, *, create: bool):
-    company = get_company_for_user(contrato.usuario)
+    company = get_company_for_user(contrato.usuario, auto_create=True)
     if not company:
         return None, JsonResponse({"error": "usuario_sin_company"}, status=409)
 
@@ -957,6 +1149,106 @@ def contrato_trivia_questions(request, contract_id: int):
             "contract_id": contrato.id,
             "question_set_id": question_set.id,
             "question": _serialize_trivia_question(question),
+        },
+        status=201,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT"])
+@token_required
+def contrato_trivia_sparkle_questions(request, contract_id: int):
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.juego.slug != "trivia-sparkle":
+        return JsonResponse({"error": "juego_no_soporta_trivia_sparkle"}, status=409)
+
+    default_config = _default_customization_for_game(contrato.juego.slug)
+    customization, _ = GameCustomization.objects.get_or_create(
+        contrato=contrato,
+        defaults={"config": default_config},
+    )
+    config = _deep_merge_dict(
+        default_config,
+        _normalize_asset_urls_for_storage(customization.config or {}),
+    )
+
+    if request.method == "GET":
+        return JsonResponse(
+            {
+                "ok": True,
+                "contract_id": contrato.id,
+                "questions": _absolutize_asset_urls_for_response(
+                    request,
+                    {"content": {"sparkle_questions": _get_contract_sparkle_questions(config)}},
+                )["content"]["sparkle_questions"],
+            },
+            status=200,
+        )
+
+    if not _is_contract_editable(contrato):
+        return JsonResponse({"error": "contrato_no_editable"}, status=409)
+
+    payload, error = _leer_json(request)
+    if error:
+        return error
+
+    questions = _normalize_contract_sparkle_questions_payload(payload.get("questions"))
+    validation_error = _validate_contract_sparkle_questions_payload(questions)
+    if validation_error:
+        return validation_error
+
+    content = config.get("content") if isinstance(config.get("content"), dict) else {}
+    content["sparkle_questions"] = questions
+    config["content"] = content
+
+    customization.config = config
+    customization.save(update_fields=["config", "actualizado_en"])
+
+    response_questions = _absolutize_asset_urls_for_response(
+        request,
+        {"content": {"sparkle_questions": questions}},
+    )["content"]["sparkle_questions"]
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "contract_id": contrato.id,
+            "questions": response_questions,
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_POST
+@token_required
+def contrato_trivia_sparkle_images(request, contract_id: int):
+    contrato = _get_user_contract_or_404(request, contract_id)
+    if contrato.juego.slug != "trivia-sparkle":
+        return JsonResponse({"error": "juego_no_soporta_trivia_sparkle"}, status=409)
+    if not _is_contract_editable(contrato):
+        return JsonResponse({"error": "contrato_no_editable"}, status=409)
+
+    uploaded = request.FILES.get("file")
+    if not uploaded:
+        return JsonResponse({"error": "archivo_requerido", "field": "file"}, status=400)
+
+    validation_error = _validate_uploaded_asset(uploaded)
+    if validation_error:
+        return validation_error
+
+    saved_path = _save_contract_asset_file(
+        contract_id=contrato.id,
+        asset_key="sparkle_questions",
+        uploaded_file=uploaded,
+    )
+    uploaded_url = default_storage.url(saved_path)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "contract_id": contrato.id,
+            "image_url": _to_absolute_url(request, uploaded_url),
         },
         status=201,
     )

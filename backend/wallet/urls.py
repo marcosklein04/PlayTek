@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     # Superadmin dashboard
     path("admin/overview", views.admin_super_overview, name="admin_overview"),
+    path("admin/clients/<int:user_id>/assign-credits", views.admin_assign_client_credits, name="admin_assign_client_credits"),
 
     # Packs
     path("credit-packs", views.credit_packs, name="credit_packs"),

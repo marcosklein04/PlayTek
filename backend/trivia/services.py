@@ -2,19 +2,25 @@
 from django.utils import timezone
 
 from accounts.models import Company
-from accounts.models import UserProfile
+from accounts.services import ensure_company_for_user
 from .models import Question, QuestionSet, TriviaReservation
 from django.db import models
 
 
-def get_company_for_user(user):
+def get_company_for_user(user, auto_create=False, preferred_name=""):
     """
     Empresa desde el perfil del usuario.
     """
     try:
         profile = user.profile  # related_name="profile"
-        return profile.company
+        if profile.company:
+            return profile.company
+        if auto_create:
+            return ensure_company_for_user(user, preferred_name=preferred_name)
+        return None
     except Exception:
+        if auto_create:
+            return ensure_company_for_user(user, preferred_name=preferred_name)
         return None
 
 

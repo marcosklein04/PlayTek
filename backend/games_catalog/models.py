@@ -13,8 +13,8 @@ class Tag(models.Model):
 
     class Meta:
         db_table = "games_catalog_tag"
-        verbose_name = "Tag"
-        verbose_name_plural = "Tags"
+        verbose_name = "Etiqueta"
+        verbose_name_plural = "Etiquetas"
         ordering = ["name"]
 
     def __str__(self) -> str:
@@ -54,8 +54,8 @@ class Game(models.Model):
 
 class GameSession(models.Model):
     class Status(models.TextChoices):
-        ACTIVE = "active", "Active"
-        FINISHED = "finished", "Finished"
+        ACTIVE = "active", "Activa"
+        FINISHED = "finished", "Finalizada"
         ERROR = "error", "Error"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -153,6 +153,8 @@ class ContratoJuego(models.Model):
     class Meta:
         db_table = "games_catalog_contratojuego"
         ordering = ["-creado_en"]
+        verbose_name = "Contrato de juego"
+        verbose_name_plural = "Contratos de juego"
         indexes = [
             models.Index(fields=["usuario", "juego", "estado"]),
             models.Index(fields=["fecha_inicio", "fecha_fin"]),
@@ -173,6 +175,8 @@ class ContratoJuegoFecha(models.Model):
     class Meta:
         db_table = "games_catalog_contratojuegofecha"
         ordering = ["fecha"]
+        verbose_name = "Fecha de contrato"
+        verbose_name_plural = "Fechas de contrato"
         constraints = [
             models.UniqueConstraint(
                 fields=["contrato", "fecha"],
@@ -200,6 +204,8 @@ class GameCustomization(models.Model):
     class Meta:
         db_table = "games_catalog_gamecustomization"
         ordering = ["-actualizado_en"]
+        verbose_name = "Personalización de juego"
+        verbose_name_plural = "Personalizaciones de juego"
 
     def __str__(self):
         return f"Customization contrato={self.contrato_id}"

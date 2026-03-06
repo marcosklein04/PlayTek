@@ -324,3 +324,86 @@ class MercadoPagoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json().get("ignored"), "invalid_signature")
         requests_get_mock.assert_not_called()
+
+
+class AdminWalletActionsTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_superuser(
+            username="superadmin_actions",
+            email="superadmin_actions@example.com",
+            password="123456",
+        )
+        self.superadmin_token = ApiToken.objects.create(
+            user=self.superadmin,
+            key=ApiToken.generate_key(),
+        )
+
+        self.client_user = User.objects.create_user(
+            username="cliente_acciones",
+            email="cliente_acciones@example.com",
+            password="123456",
+        )
+        self.client_token = ApiToken.objects.create(
+            user=self.client_user,
+            key=ApiToken.generate_key(),
+        )
+        Wallet.objects.create(user=self.client_user, balance=10)
+
+    def _admin_headers(self):
+        return {
+            "HTTP_AUTHORIZATION": f"Bearer {self.superadmin_token.key}",
+            "content_type": "application/json",
+        }
+
+    def test_admin_assign_client_credits_updates_wallet_and_ledger(self):
+        response = self.client.post(
+            f"/api/admin/clients/{self.client_user.id}/assign-credits",
+            data=json.dumps({"amount": 35, "reason": "bonificacion_marzo"}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self.superadmin_token.key}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["amount"], 35)
+        self.assertEqual(body["new_balance"], 45)
+
+        wallet = Wallet.objects.get(user=self.client_user)
+        self.assertEqual(wallet.balance, 45)
+
+        ledger_entry = LedgerEntry.objects.get(
+            user=self.client_user,
+            kind=LedgerEntry.Kind.ADJUST,
+            reference_type="admin_manual_credit",
+        )
+        self.assertEqual(ledger_entry.amount, 35)
+        self.assertEqual(ledger_entry.reference_id, "bonificacion_marzo")
+
+    def test_admin_create_credit_pack_calculates_discounted_price(self):
+        response = self.client.post(
+            "/api/admin/credit-packs/create",
+            data=json.dumps({
+                "name": "Pack 20 créditos promo",
+                "credits": 20,
+                "base_price_ars": "60000.00",
+                "discount_percent": 3,
+                "mp_title": "Pack promo 20",
+                "mp_description": "Promo",
+                "active": True,
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self.superadmin_token.key}",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(Decimal(body["pack"]["price_ars"]), Decimal("58200.00"))
+        self.assertEqual(Decimal(body["pack"]["base_price_ars"]), Decimal("60000.00"))
+        self.assertEqual(body["pack"]["discount_percent"], 3)
+
+        pack = CreditPack.objects.get(id=body["pack"]["id"])
+        self.assertEqual(pack.price_ars, Decimal("58200.00"))
+        self.assertEqual(pack.base_price_ars, Decimal("60000.00"))
+        self.assertEqual(pack.discount_percent, 3)

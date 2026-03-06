@@ -4,7 +4,9 @@ export type CreditPack = {
   id: number;
   name: string;
   credits: number;
-  price_ars: string;       
+  price_ars: string;
+  base_price_ars: string;
+  discount_percent: number;
   mp_title?: string;
   mp_description?: string;
 };

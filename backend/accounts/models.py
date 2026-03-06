@@ -9,6 +9,8 @@ class Company(models.Model):
     class Meta:
         db_table = "accounts_company"
         ordering = ["name"]
+        verbose_name = "Empresa"
+        verbose_name_plural = "Empresas"
 
     def __str__(self):
         return self.name
@@ -30,6 +32,8 @@ class UserProfile(models.Model):
 
     class Meta:
         db_table = "accounts_userprofile"
+        verbose_name = "Perfil de usuario"
+        verbose_name_plural = "Perfiles de usuario"
 
     def __str__(self):
         return f"{self.user} ({self.company})"

@@ -7,6 +7,10 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/api/client";
 
+function formatArs(value: number) {
+  return `$${value.toLocaleString("es-AR")}`;
+}
+
 export default function BuyCredits() {
   const { toast } = useToast();
   const { refreshWalletBalance } = useAuth();
@@ -101,6 +105,8 @@ export default function BuyCredits() {
     }
   };
 
+  const sortedPacks = [...packs].sort((a, b) => a.credits - b.credits);
+
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
@@ -116,31 +122,68 @@ export default function BuyCredits() {
           </p>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-          {packs.map((p) => (
-            <div key={p.id} className="glass-card p-6">
-              <div className="text-xl font-semibold">{p.name}</div>
-              <div className="text-sm text-muted-foreground mt-1">{p.credits} créditos</div>
+        {!loading && packs.length > 0 && (
+          <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {sortedPacks.map((p) => {
+              const finalPrice = Number(p.price_ars);
+              const basePrice = Number(p.base_price_ars || p.price_ars);
+              const discountPercent = Number(p.discount_percent || 0);
 
-              <div className="text-3xl font-bold mt-4">
-                ${Number(p.price_ars).toLocaleString("es-AR")} ARS
-              </div>
+              return (
+                <div
+                  key={p.id}
+                  className="glass-card group relative overflow-hidden rounded-[28px] border border-primary/15 bg-card/60 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]"
+                >
+                  <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
 
-              {p.mp_description && (
-                <div className="text-sm text-muted-foreground mt-2">{p.mp_description}</div>
-              )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">
+                        Pack de créditos
+                      </p>
+                      <h2 className="mt-2 text-4xl font-display font-bold text-foreground">
+                        {p.credits}
+                      </h2>
+                    </div>
+                    <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                      {discountPercent}% OFF
+                    </div>
+                  </div>
 
-              <Button
-                className="w-full mt-6"
-                variant="glow"
-                disabled={payingId === p.id}
-                onClick={() => handleBuy(p)}
-              >
-                {payingId === p.id ? "Redirigiendo..." : "Comprar"}
-              </Button>
-            </div>
-          ))}
-        </div>
+                  <div className="mt-6 space-y-3">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>Precio base</span>
+                      <span className={discountPercent > 0 ? "line-through opacity-70" : ""}>
+                        {formatArs(basePrice)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>Descuento</span>
+                      <span>{discountPercent}%</span>
+                    </div>
+                    <div className="rounded-2xl border border-primary/10 bg-background/60 px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                        Precio final ARS
+                      </p>
+                      <p className="mt-2 text-3xl font-bold gradient-text">
+                        {formatArs(finalPrice)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    className="mt-6 w-full"
+                    variant="glow"
+                    disabled={payingId === p.id}
+                    onClick={() => handleBuy(p)}
+                  >
+                    {payingId === p.id ? "Redirigiendo..." : "Comprar"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </main>
     </div>
   );

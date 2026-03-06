@@ -66,7 +66,7 @@ export default function Dashboard() {
 
   const handleOpenContract = (gameId: string) => {
     const game = games.find((item) => item.id === gameId) || null;
-    if (game && !isGameAvailable(game.id)) {
+    if (game && !isGameAvailable(game.id, user?.role)) {
       notifyUnavailableGame();
       return;
     }
@@ -75,7 +75,7 @@ export default function Dashboard() {
   };
 
   const handlePreviewGame = async (gameId: string) => {
-    if (!isGameAvailable(gameId)) {
+    if (!isGameAvailable(gameId, user?.role)) {
       notifyUnavailableGame();
       return;
     }
@@ -239,7 +239,7 @@ export default function Dashboard() {
                 onContract={handleOpenContract}
                 onViewDetails={setSelectedGame}
                 isContracted={contractedGames.some(cg => cg.id === game.id)}
-                isAvailable={isGameAvailable(game.id)}
+                isAvailable={isGameAvailable(game.id, user?.role)}
                 onUnavailableClick={notifyUnavailableGame}
               />
             ))}
