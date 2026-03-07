@@ -45,7 +45,7 @@ export async function createGameContract(payload: CreateContractPayload) {
   });
 }
 
-export type TriviaCustomization = {
+export type ContractCustomizationConfig = {
   branding: {
     primary_color: string;
     secondary_color: string;
@@ -58,6 +58,10 @@ export type TriviaCustomization = {
     welcome_title: string;
     welcome_subtitle: string;
     cta_button: string;
+    completion_title?: string;
+    completion_subtitle?: string;
+    instructions_text?: string;
+    play_again_button?: string;
   };
   rules: {
     show_timer: boolean;
@@ -66,6 +70,16 @@ export type TriviaCustomization = {
     max_questions: number;
     use_lives: boolean;
     lives: number;
+    show_moves?: boolean;
+    show_progress?: boolean;
+    grid_size?: number;
+    show_score?: boolean;
+    show_saves?: boolean;
+    goalkeeper_width?: number;
+    points_per_save?: number;
+    ball_speed_min?: number;
+    ball_speed_max?: number;
+    spawn_interval_ms?: number;
   };
   visual: {
     question_bg_color: string;
@@ -76,6 +90,20 @@ export type TriviaCustomization = {
     option_bg_color: string;
     screen_background_color: string;
     container_bg_image_url: string;
+    panel_bg_color?: string;
+    panel_border_color?: string;
+    text_color?: string;
+    accent_color?: string;
+    success_color?: string;
+    field_green_color?: string;
+    field_dark_color?: string;
+    line_color?: string;
+    score_panel_bg?: string;
+    sponsor_bg_color?: string;
+    sponsor_text_color?: string;
+    goalkeeper_jersey_color?: string;
+    goalkeeper_detail_color?: string;
+    goalkeeper_glove_color?: string;
   };
   watermark: {
     enabled: boolean;
@@ -87,21 +115,28 @@ export type TriviaCustomization = {
   content?: {
     question_set_id?: number | null;
     sparkle_questions?: ContractSparkleQuestion[];
+    puzzle_image_url?: string;
+    sponsor_top_left?: string;
+    sponsor_top_right?: string;
+    sponsor_bottom?: string;
   };
 };
+
+export type TriviaCustomization = ContractCustomizationConfig;
 
 export type ContractCustomizationResponse = {
   ok: boolean;
   contract_id: number;
   game_slug: string;
-  config: TriviaCustomization;
+  config: ContractCustomizationConfig;
 };
 
 export type ContractAssetKey =
   | "logo"
   | "welcome_image"
   | "background"
-  | "container_background";
+  | "container_background"
+  | "puzzle_image";
 
 export type ContractTriviaChoice = {
   id: number;
@@ -156,7 +191,7 @@ export async function fetchContractCustomization(contractId: number) {
   });
 }
 
-export async function saveContractCustomization(contractId: number, config: TriviaCustomization) {
+export async function saveContractCustomization(contractId: number, config: ContractCustomizationConfig) {
   return apiFetch<ContractCustomizationResponse>(`/api/contracts/${contractId}/customization/save`, {
     method: "PUT",
     body: JSON.stringify({ config }),

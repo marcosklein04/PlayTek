@@ -3,6 +3,8 @@ import { ApiGame } from "@/api/games";
 
 const FALLBACK_IMAGE_BY_SLUG: Record<string, string> = {
   connect4: "/img/connect4.jpeg",
+  "puzzle-mundial": "/img/puzzle-mundial.jpeg",
+  "super-portero-mundial": "/img/super-portero-mundial.svg",
   trivia: "/img/trivia-normal.jpeg",
   "trivia-sparkle": "/img/trivia-sparkle.jpeg",
 };

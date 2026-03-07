@@ -1,0 +1,58 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="600" y1="0" x2="600" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B3B23"/>
+      <stop offset="0.45" stop-color="#1F7A38"/>
+      <stop offset="1" stop-color="#0B3B23"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="302" y1="118" x2="836" y2="592" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE082"/>
+      <stop offset="0.55" stop-color="#F7C948"/>
+      <stop offset="1" stop-color="#D9A21B"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1200" height="800" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect x="64" y="64" width="1072" height="672" rx="36" stroke="rgba(255,255,255,0.28)" stroke-width="6"/>
+  <circle cx="600" cy="410" r="112" stroke="rgba(255,255,255,0.22)" stroke-width="6"/>
+  <path d="M0 270H1200" stroke="rgba(255,255,255,0.14)" stroke-width="4"/>
+  <path d="M0 550H1200" stroke="rgba(255,255,255,0.14)" stroke-width="4"/>
+  <g filter="url(#shadow)">
+    <rect x="870" y="96" width="208" height="92" rx="24" fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.14)"/>
+    <text x="974" y="132" fill="#DDEEE4" font-family="Arial, sans-serif" font-size="24" text-anchor="middle">PARTIDA</text>
+    <text x="974" y="170" fill="#F7C948" font-family="Arial, sans-serif" font-size="42" font-weight="700" text-anchor="middle">ARCADE</text>
+  </g>
+  <g filter="url(#shadow)">
+    <circle cx="820" cy="250" r="58" fill="#fff"/>
+    <path d="M820 204L838 229L827 253H813L802 229L820 204Z" fill="#101828"/>
+    <path d="M782 236L802 229L813 253L792 269L771 252L782 236Z" fill="#101828"/>
+    <path d="M858 236L869 252L848 269L827 253L838 229L858 236Z" fill="#101828"/>
+    <path d="M792 269L813 253L820 286L800 300L792 269Z" fill="#101828"/>
+    <path d="M827 253L848 269L840 300L820 286L827 253Z" fill="#101828"/>
+  </g>
+  <g filter="url(#shadow)">
+    <ellipse cx="372" cy="510" rx="82" ry="92" fill="#2563EB"/>
+    <ellipse cx="372" cy="495" rx="68" ry="74" fill="#3B82F6"/>
+    <rect x="346" y="420" width="52" height="142" fill="#2563EB"/>
+    <ellipse cx="250" cy="478" rx="54" ry="26" fill="#3B82F6"/>
+    <circle cx="200" cy="478" r="28" fill="#22C55E"/>
+    <ellipse cx="494" cy="478" rx="54" ry="26" fill="#3B82F6"/>
+    <circle cx="544" cy="478" r="28" fill="#22C55E"/>
+    <circle cx="372" cy="330" r="74" fill="#F4C7A0"/>
+    <ellipse cx="372" cy="285" rx="62" ry="28" fill="#4A3728"/>
+    <circle cx="346" cy="320" r="8" fill="#111827"/>
+    <circle cx="398" cy="320" r="8" fill="#111827"/>
+    <path d="M350 356C363 365 381 365 394 356" stroke="#9A5C42" stroke-width="8" stroke-linecap="round"/>
+    <rect x="324" y="598" width="96" height="42" rx="10" fill="#111827"/>
+    <rect x="326" y="638" width="32" height="52" rx="10" fill="#F4C7A0"/>
+    <rect x="386" y="638" width="32" height="52" rx="10" fill="#F4C7A0"/>
+    <text x="372" y="518" fill="white" font-family="Arial, sans-serif" font-size="36" font-weight="700" text-anchor="middle">1</text>
+  </g>
+  <text x="86" y="156" fill="url(#gold)" font-family="Impact, Arial Black, sans-serif" font-size="116" letter-spacing="2">SÚPER</text>
+  <text x="86" y="258" fill="#FFFFFF" font-family="Impact, Arial Black, sans-serif" font-size="102" letter-spacing="2">PORTERO</text>
+  <text x="86" y="326" fill="#DDEEE4" font-family="Arial, sans-serif" font-size="30" letter-spacing="8">WORLD CUP ARCADE</text>
+  <rect x="86" y="360" width="340" height="10" rx="5" fill="#F7C948" opacity="0.75"/>
+  <text x="86" y="694" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="34" font-weight="700">ATAJÁ LOS REMATES Y SUMÁ PUNTOS</text>
+</svg>

@@ -4,10 +4,10 @@ import { Sidebar } from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
+  ContractCustomizationConfig,
   ContractAssetKey,
   ContractSparkleQuestion,
   ContractTriviaQuestion,
-  TriviaCustomization,
   createContractTriviaQuestion,
   deleteContractAsset,
   deleteContractTriviaQuestion,
@@ -22,6 +22,15 @@ import {
   uploadContractAsset,
   uploadContractSparkleImage,
 } from "@/api/contracts";
+import { GoalkeeperBrandingSection } from "@/components/contract-customization/GoalkeeperBrandingSection";
+import { GoalkeeperPreviewPanel } from "@/components/contract-customization/GoalkeeperPreviewPanel";
+import { GoalkeeperRulesSection } from "@/components/contract-customization/GoalkeeperRulesSection";
+import { GoalkeeperTextsSection } from "@/components/contract-customization/GoalkeeperTextsSection";
+import { GoalkeeperVisualSection } from "@/components/contract-customization/GoalkeeperVisualSection";
+import { PuzzleBrandingSection } from "@/components/contract-customization/PuzzleBrandingSection";
+import { PuzzlePreviewPanel } from "@/components/contract-customization/PuzzlePreviewPanel";
+import { PuzzleRulesSection } from "@/components/contract-customization/PuzzleRulesSection";
+import { PuzzleTextsSection } from "@/components/contract-customization/PuzzleTextsSection";
 import { SparkleBrandingSection } from "@/components/contract-customization/SparkleBrandingSection";
 import { SparkleIntroSection } from "@/components/contract-customization/SparkleIntroSection";
 import { SparklePreviewPanel } from "@/components/contract-customization/SparklePreviewPanel";
@@ -56,7 +65,7 @@ export default function ContractCustomization() {
   const [uploadingAsset, setUploadingAsset] = useState<ContractAssetKey | null>(null);
 
   const [gameSlug, setGameSlug] = useState("");
-  const [config, setConfig] = useState<TriviaCustomization | null>(null);
+  const [config, setConfig] = useState<ContractCustomizationConfig | null>(null);
 
   const [triviaQuestionsLoading, setTriviaQuestionsLoading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -73,6 +82,8 @@ export default function ContractCustomization() {
 
   const normalizedGameSlug = gameSlug.trim().toLowerCase();
   const isTriviaSparkle = normalizedGameSlug === "trivia-sparkle";
+  const isPuzzleMundial = normalizedGameSlug === "puzzle-mundial";
+  const isSuperPorteroMundial = normalizedGameSlug === "super-portero-mundial";
   const supportsTriviaQuestions = normalizedGameSlug === "trivia";
   const supportsSparkleQuestions = isTriviaSparkle;
 
@@ -173,7 +184,11 @@ export default function ContractCustomization() {
       let cursor: Record<string, unknown> = next as unknown as Record<string, unknown>;
 
       for (let index = 0; index < path.length - 1; index += 1) {
-        cursor = cursor[path[index]] as Record<string, unknown>;
+        const segment = path[index];
+        if (!cursor[segment] || typeof cursor[segment] !== "object") {
+          cursor[segment] = {};
+        }
+        cursor = cursor[segment] as Record<string, unknown>;
       }
 
       cursor[path[path.length - 1]] = value;
@@ -212,6 +227,56 @@ export default function ContractCustomization() {
     toast({
       title: "Paleta Playteck aplicada",
       description: "Ajustamos colores para Trivia Sparkle. Guarda para confirmar.",
+    });
+  };
+
+  const applyPuzzlePalette = () => {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev);
+      next.branding.primary_color = "#00f5e9";
+      next.branding.secondary_color = "#081a2b";
+      next.visual.screen_background_color = "#04121f";
+      next.visual.panel_bg_color = "#081a2b";
+      next.visual.panel_border_color = "#1b6888";
+      next.visual.text_color = "#f4fbff";
+      next.visual.accent_color = "#00f5e9";
+      next.visual.success_color = "#8ee05f";
+      next.watermark.color = "#00f5e9";
+      return next;
+    });
+
+    toast({
+      title: "Paleta Playteck aplicada",
+      description: "Ajustamos los colores base del Puzzle Mundial.",
+    });
+  };
+
+  const applyGoalkeeperPalette = () => {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev);
+      next.branding.primary_color = "#00f5e9";
+      next.branding.secondary_color = "#081a2b";
+      next.visual.screen_background_color = "#071523";
+      next.visual.field_green_color = "#0d5f38";
+      next.visual.field_dark_color = "#062f1d";
+      next.visual.line_color = "#dffaf6";
+      next.visual.score_panel_bg = "#03101c";
+      next.visual.sponsor_bg_color = "#03101c";
+      next.visual.sponsor_text_color = "#e6fbff";
+      next.visual.goalkeeper_jersey_color = "#00f5e9";
+      next.visual.goalkeeper_detail_color = "#1e90ff";
+      next.visual.goalkeeper_glove_color = "#f6ff6a";
+      next.visual.accent_color = "#00f5e9";
+      next.visual.question_text_color = "#f4fbff";
+      next.watermark.color = "#00f5e9";
+      return next;
+    });
+
+    toast({
+      title: "Paleta Playteck aplicada",
+      description: "Ajustamos los colores base de Súper Portero Mundial.",
     });
   };
 
@@ -735,7 +800,13 @@ export default function ContractCustomization() {
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">
-              {isTriviaSparkle ? "Personalizar Trivia Sparkle" : "Customización del contrato"}
+              {isTriviaSparkle
+                ? "Personalizar Trivia Sparkle"
+                : isPuzzleMundial
+                  ? "Personalizar Puzzle Mundial"
+                  : isSuperPorteroMundial
+                    ? "Personalizar Súper Portero Mundial"
+                  : "Customización del contrato"}
             </h1>
             <p className="text-muted-foreground mt-1">
               Contrato #{validId ? contractId : "-"} {gameSlug ? `· ${gameSlug}` : ""}
@@ -792,6 +863,41 @@ export default function ContractCustomization() {
 
                 <SparklePreviewPanel config={config} questions={sparkleQuestionForms} />
               </div>
+            ) : isPuzzleMundial ? (
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-6">
+                  <PuzzleBrandingSection
+                    config={config}
+                    uploadingAsset={uploadingAsset}
+                    onApplyPlayteckPalette={applyPuzzlePalette}
+                    onUpdateField={updateField}
+                    onUploadAsset={handleUploadAsset}
+                    onDeleteAsset={handleDeleteAsset}
+                  />
+                  <PuzzleTextsSection config={config} onUpdateField={updateField} />
+                  <PuzzleRulesSection config={config} onUpdateField={updateField} />
+                </div>
+
+                <PuzzlePreviewPanel config={config} />
+              </div>
+            ) : isSuperPorteroMundial ? (
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-6">
+                  <GoalkeeperBrandingSection
+                    config={config}
+                    uploadingAsset={uploadingAsset}
+                    onApplyPalette={applyGoalkeeperPalette}
+                    onUpdateField={updateField}
+                    onUploadAsset={handleUploadAsset}
+                    onDeleteAsset={handleDeleteAsset}
+                  />
+                  <GoalkeeperTextsSection config={config} onUpdateField={updateField} />
+                  <GoalkeeperRulesSection config={config} onUpdateField={updateField} />
+                  <GoalkeeperVisualSection config={config} onUpdateField={updateField} />
+                </div>
+
+                <GoalkeeperPreviewPanel config={config} />
+              </div>
             ) : (
               supportsTriviaQuestions && (
                 <TriviaQuestionsSection
@@ -824,7 +930,7 @@ export default function ContractCustomization() {
               <Button variant="hero" disabled={disabled} onClick={handleLaunchAuto}>
                 {starting ? "Abriendo..." : "Iniciar según fecha"}
               </Button>
-              {isTriviaSparkle && (
+              {(isTriviaSparkle || isPuzzleMundial || isSuperPorteroMundial) && (
                 <Button variant="glow" disabled={disabled} onClick={handleSave}>
                   {saving ? "Guardando..." : "Guardar customización"}
                 </Button>

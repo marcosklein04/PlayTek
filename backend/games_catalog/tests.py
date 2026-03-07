@@ -219,6 +219,57 @@ class GamesCatalogContractDatesTests(TestCase):
         )
         self.assertEqual(create_range.status_code, 201)
 
+
+class GamesCatalogPuzzleMundialTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(username="puzzle_user", password="secret123")
+        self.token = ApiToken.objects.create(user=self.user, key=ApiToken.generate_key())
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {self.token.key}"}
+        Wallet.objects.create(user=self.user, balance=20)
+        self.game, _ = Game.objects.update_or_create(
+            slug="puzzle-mundial",
+            defaults={
+                "name": "Puzzle Mundial",
+                "runner_url": "/runner/puzzle-mundial",
+                "cost_per_play": 2,
+                "is_enabled": True,
+            },
+        )
+
+    def _post_json(self, path: str, payload: dict):
+        return self.client.post(path, data=json.dumps(payload), content_type="application/json", **self.auth)
+
+    def test_preview_uses_puzzle_mundial_runner(self):
+        response = self.client.post(f"/api/juegos/{self.game.slug}/preview", **self.auth)
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["preview_mode"])
+        self.assertIn("/runner/puzzle-mundial", payload["juego"]["runner_url"])
+
+        session = GameSession.objects.get(id=payload["id_sesion"])
+        customization = session.client_state.get("customization") or {}
+        self.assertEqual(customization.get("texts", {}).get("welcome_title"), "PUZZLE MUNDIAL")
+        self.assertEqual(customization.get("rules", {}).get("grid_size"), 3)
+
+    def test_runner_page_requires_valid_session_and_returns_html(self):
+        session = GameSession.objects.create(
+            user=self.user,
+            game=self.game,
+            status=GameSession.Status.ACTIVE,
+            cost_charged=0,
+            client_state={"preview_mode": True},
+            runner_token="puzzle-token",
+        )
+
+        response = self.client.get(
+            f"/runner/puzzle-mundial?session_id={session.id}&user_id={self.user.id}&session_token={session.runner_token}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Puzzle Mundial")
+
     def test_contract_rejects_only_duplicated_dates_with_conflict_detail(self):
         today = timezone.localdate()
         tomorrow = today + timedelta(days=1)
@@ -244,6 +295,54 @@ class GamesCatalogContractDatesTests(TestCase):
         body = create_conflict.json()
         self.assertEqual(body.get("error"), "ya_existe_contrato_en_esas_fechas")
         self.assertIn(today.isoformat(), body.get("fechas_conflictivas", []))
+
+
+class GamesCatalogSuperPorteroMundialTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(username="goalkeeper_user", password="secret123")
+        self.token = ApiToken.objects.create(user=self.user, key=ApiToken.generate_key())
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {self.token.key}"}
+        Wallet.objects.create(user=self.user, balance=20)
+        self.game, _ = Game.objects.update_or_create(
+            slug="super-portero-mundial",
+            defaults={
+                "name": "Súper Portero",
+                "runner_url": "/runner/super-portero-mundial",
+                "cost_per_play": 2,
+                "is_enabled": True,
+            },
+        )
+
+    def test_preview_uses_super_portero_runner(self):
+        response = self.client.post(f"/api/juegos/{self.game.slug}/preview", **self.auth)
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["preview_mode"])
+        self.assertIn("/runner/super-portero-mundial", payload["juego"]["runner_url"])
+
+        session = GameSession.objects.get(id=payload["id_sesion"])
+        customization = session.client_state.get("customization") or {}
+        self.assertEqual(customization.get("texts", {}).get("welcome_title"), "SÚPER PORTERO")
+        self.assertEqual(customization.get("rules", {}).get("points_per_save"), 10)
+
+    def test_runner_page_requires_valid_session_and_returns_html(self):
+        session = GameSession.objects.create(
+            user=self.user,
+            game=self.game,
+            status=GameSession.Status.ACTIVE,
+            cost_charged=0,
+            client_state={"preview_mode": True},
+            runner_token="goalkeeper-token",
+        )
+
+        response = self.client.get(
+            f"/runner/super-portero-mundial?session_id={session.id}&user_id={self.user.id}&session_token={session.runner_token}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Súper Portero")
 
 
 class GamesCatalogContractTriviaQuestionsTests(TestCase):

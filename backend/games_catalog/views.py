@@ -27,6 +27,7 @@ CONTRACT_ASSET_FIELDS = {
     "welcome_image": ("branding", "welcome_image_url"),
     "background": ("branding", "background_url"),
     "container_background": ("visual", "container_bg_image_url"),
+    "puzzle_image": ("content", "puzzle_image_url"),
 }
 
 ALLOWED_ASSET_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif"}
@@ -41,6 +42,7 @@ MAX_ASSET_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
 MAX_TRIVIA_CHOICES = 6
 MAX_SPARKLE_QUESTIONS = 50
 CONTRACT_TRIVIA_GAMES = {"trivia", "trivia-sparkle"}
+CONTRACT_CUSTOMIZATION_GAMES = {"trivia", "trivia-sparkle", "puzzle-mundial", "super-portero-mundial"}
 SPARKLE_QUESTION_TYPES = {"text_answers", "image_answers"}
 
 
@@ -142,6 +144,129 @@ def _default_customization_for_game(game_slug: str) -> dict:
             "content": {
                 "question_set_id": None,
                 "sparkle_questions": [],
+            },
+        }
+
+    if game_slug == "puzzle-mundial":
+        return {
+            "branding": {
+                "primary_color": "#00f5e9",
+                "secondary_color": "#081a2b",
+                "logo_url": "",
+                "background_url": "",
+                "welcome_image_url": "",
+                "watermark_text": "MODO PRUEBA",
+            },
+            "texts": {
+                "welcome_title": "PUZZLE MUNDIAL",
+                "welcome_subtitle": "Armá la imagen del mundial pieza por pieza.",
+                "cta_button": "Empezar puzzle",
+                "completion_title": "¡Golazo!",
+                "completion_subtitle": "Completaste el puzzle y cerraste la jugada.",
+            },
+            "rules": {
+                "show_timer": True,
+                "timer_seconds": 180,
+                "points_per_correct": 0,
+                "max_questions": 0,
+                "use_lives": False,
+                "lives": 0,
+                "show_moves": True,
+                "show_progress": True,
+                "grid_size": 3,
+            },
+            "visual": {
+                "question_bg_color": "#0c2033",
+                "question_border_color": "#1b6888",
+                "question_text_color": "#f4fbff",
+                "question_font_family": "Outfit, Inter, Arial, sans-serif",
+                "option_border_color": "#1b6888",
+                "option_bg_color": "#12324a",
+                "screen_background_color": "#04121f",
+                "container_bg_image_url": "",
+                "panel_bg_color": "#081a2b",
+                "panel_border_color": "#1b6888",
+                "text_color": "#f4fbff",
+                "accent_color": "#00f5e9",
+                "success_color": "#8ee05f",
+            },
+            "watermark": {
+                "enabled": True,
+                "color": "#00f5e9",
+                "opacity": 0.2,
+                "position": "center",
+                "font_size": 96,
+            },
+            "content": {
+                "puzzle_image_url": "",
+            },
+        }
+
+    if game_slug == "super-portero-mundial":
+        return {
+            "branding": {
+                "primary_color": "#f7c948",
+                "secondary_color": "#0f3d26",
+                "logo_url": "",
+                "background_url": "",
+                "welcome_image_url": "",
+                "watermark_text": "MODO PRUEBA",
+            },
+            "texts": {
+                "welcome_title": "SÚPER PORTERO",
+                "welcome_subtitle": "Mové al arquero de lado a lado y atajá todos los remates.",
+                "cta_button": "Tocar para jugar",
+                "completion_title": "FIN DEL JUEGO",
+                "completion_subtitle": "Tus reflejos definieron el resultado.",
+                "instructions_text": "Arrastrá al portero a izquierda y derecha para parar los balones.",
+                "play_again_button": "Jugar de nuevo",
+            },
+            "rules": {
+                "show_timer": True,
+                "timer_seconds": 60,
+                "points_per_correct": 0,
+                "max_questions": 0,
+                "use_lives": False,
+                "lives": 0,
+                "show_score": True,
+                "show_saves": True,
+                "goalkeeper_width": 120,
+                "points_per_save": 10,
+                "ball_speed_min": 4,
+                "ball_speed_max": 8,
+                "spawn_interval_ms": 800,
+            },
+            "visual": {
+                "question_bg_color": "#143d28",
+                "question_border_color": "#ffffff",
+                "question_text_color": "#ffffff",
+                "question_font_family": "Oswald, Impact, sans-serif",
+                "option_border_color": "#ffffff",
+                "option_bg_color": "rgba(0, 0, 0, 0.55)",
+                "screen_background_color": "#102a1a",
+                "container_bg_image_url": "",
+                "field_green_color": "#2b8a3e",
+                "field_dark_color": "#0b3b23",
+                "line_color": "#f4f6f2",
+                "score_panel_bg": "#111111",
+                "sponsor_bg_color": "#ffffff",
+                "sponsor_text_color": "#d6e7db",
+                "goalkeeper_jersey_color": "#2563eb",
+                "goalkeeper_detail_color": "#3b82f6",
+                "goalkeeper_glove_color": "#22c55e",
+                "accent_color": "#f7c948",
+            },
+            "watermark": {
+                "enabled": True,
+                "color": "#f7c948",
+                "opacity": 0.18,
+                "position": "center",
+                "font_size": 96,
+            },
+            "content": {
+                "sponsor_top_left": "PATROCINADOR",
+                "sponsor_top_right": "PATROCINADOR",
+                "sponsor_bottom": "TU MARCA AQUÍ",
             },
         }
 
@@ -1790,7 +1915,7 @@ def iniciar_juego(request, slug: str):
             "juego": juego.slug,
             "iniciado": True,
         }
-        if juego.slug in CONTRACT_TRIVIA_GAMES:
+        if juego.slug in CONTRACT_CUSTOMIZATION_GAMES:
             client_state["customization"] = custom_config
             client_state["preview_mode"] = preview_mode
             if contrato_activo:
@@ -1867,7 +1992,7 @@ def preview_juego(request, slug: str):
         "preview_mode": True,
     }
 
-    if juego.slug in CONTRACT_TRIVIA_GAMES:
+    if juego.slug in CONTRACT_CUSTOMIZATION_GAMES:
         if juego.slug == "trivia":
             question_set = _pick_question_set_for_preview(request.user, juego)
             if not question_set:
