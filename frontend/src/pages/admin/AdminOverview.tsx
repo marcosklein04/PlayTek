@@ -1,522 +1,279 @@
 import { useEffect, useState } from "react";
-import { Sidebar } from "@/components/Sidebar";
-import { Input } from "@/components/ui/input";
+import { Link } from "react-router-dom";
+import { ArrowRight, FolderOpen, RefreshCcw, Users, Wallet } from "lucide-react";
+
+import { fetchAdminOverview, type AdminOverviewFilters, type SuperadminOverviewResponse } from "@/api/adminOverview";
+import { AdminLayout } from "@/components/admin/AdminLayout";
+import { AdminStatCard } from "@/components/admin/AdminStatCard";
+import { formatAdminDate, formatArs, formatContractStatus, formatCredits, formatEventDates } from "@/components/admin/adminFormatters";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AdminOverviewFilters,
-  assignClientCredits,
-  fetchAdminOverview,
-  SuperadminOverviewResponse,
-} from "@/api/adminOverview";
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString("es-AR");
-  } catch {
-    return value;
+function statusClass(status: string) {
+  switch (status) {
+    case "activo":
+      return "border-primary/20 bg-primary/10 text-primary";
+    case "borrador":
+      return "border-amber-500/20 bg-amber-500/10 text-amber-300";
+    case "cancelado":
+      return "border-destructive/20 bg-destructive/10 text-destructive";
+    case "finalizado":
+      return "border-muted bg-muted/20 text-muted-foreground";
+    default:
+      return "border-border bg-background/60 text-foreground";
   }
-}
-
-function formatCredits(value?: number | null) {
-  return `${Number(value || 0).toLocaleString("es-AR")} créditos`;
-}
-
-function formatArs(value?: string | number | null) {
-  const parsed = Number(value || 0);
-  return `$${parsed.toLocaleString("es-AR")} ARS`;
-}
-
-function formatEventDates(contract: SuperadminOverviewResponse["contracts"][number]) {
-  const eventDates = (contract.fechas_evento || []).slice().sort();
-  if (eventDates.length === 1) return eventDates[0];
-  if (eventDates.length > 1) return eventDates.join(" · ");
-  if (contract.fecha_inicio === contract.fecha_fin) return contract.fecha_inicio;
-  return `${contract.fecha_inicio} → ${contract.fecha_fin}`;
 }
 
 export default function AdminOverview() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<SuperadminOverviewResponse | null>(null);
-
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [eventDateFrom, setEventDateFrom] = useState("");
-  const [eventDateTo, setEventDateTo] = useState("");
   const [search, setSearch] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [gameSlug, setGameSlug] = useState("");
-  const [contractStatus, setContractStatus] = useState("");
-  const [transactionKind, setTransactionKind] = useState("");
-  const [topupStatus, setTopupStatus] = useState("");
-  const [creditClientId, setCreditClientId] = useState("");
-  const [creditAmount, setCreditAmount] = useState("");
-  const [creditReason, setCreditReason] = useState("");
-  const [crediting, setCrediting] = useState(false);
 
   const load = async (filters?: AdminOverviewFilters) => {
     try {
       setLoading(true);
-      const res = await fetchAdminOverview(filters);
-      setData(res);
+      const response = await fetchAdminOverview(filters);
+      setData(response);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo cargar el panel";
+      const message = error instanceof Error ? error.message : "No se pudo cargar el resumen";
       toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  const buildFilters = (): AdminOverviewFilters => {
-    const parsedClientId = clientId ? Number(clientId) : undefined;
-    return {
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-      event_date_from: eventDateFrom || undefined,
-      event_date_to: eventDateTo || undefined,
-      client_id: Number.isFinite(parsedClientId) ? parsedClientId : undefined,
-      game_slug: gameSlug || undefined,
-      contract_status: contractStatus || undefined,
-      transaction_kind: transactionKind || undefined,
-      topup_status: topupStatus || undefined,
-      q: search.trim() || undefined,
-    };
-  };
-
-  const applyFilters = () => {
-    void load(buildFilters());
-  };
-
-  const clearFilters = () => {
-    setDateFrom("");
-    setDateTo("");
-    setEventDateFrom("");
-    setEventDateTo("");
-    setSearch("");
-    setClientId("");
-    setGameSlug("");
-    setContractStatus("");
-    setTransactionKind("");
-    setTopupStatus("");
-    void load();
-  };
+  const buildFilters = (): AdminOverviewFilters => ({
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
+    q: search.trim() || undefined,
+  });
 
   useEffect(() => {
     void load();
   }, []);
 
-  const handleAssignCredits = async () => {
-    const userId = Number(creditClientId);
-    const amount = Number(creditAmount);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      toast({
-        title: "Cliente inválido",
-        description: "Seleccioná un cliente para acreditar créditos.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!Number.isInteger(amount) || amount <= 0) {
-      toast({
-        title: "Cantidad inválida",
-        description: "Ingresá una cantidad entera de créditos mayor a 0.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setCrediting(true);
-      const res = await assignClientCredits(userId, {
-        amount,
-        reason: creditReason.trim() || undefined,
-      });
-      setCreditAmount("");
-      setCreditReason("");
-      await load(buildFilters());
-      toast({
-        title: "Créditos acreditados",
-        description: `${res.amount} créditos acreditados a ${res.username}. Nuevo saldo: ${res.new_balance}.`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudieron acreditar los créditos";
-      toast({ title: "Error", description: message, variant: "destructive" });
-    } finally {
-      setCrediting(false);
-    }
-  };
+  const recentContracts = (data?.contracts || []).slice(0, 5);
+  const recentTopups = (data?.topups || []).slice(0, 5);
+  const recentTransactions = (data?.transactions || []).slice(0, 5);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="ml-64 p-8 space-y-6">
-        <div>
-          <h1 className="text-3xl font-display font-bold text-foreground">Superadmin · Panel General</h1>
-          <p className="text-muted-foreground mt-1">
-            Clientes, contratos por fecha y movimientos de billetera.
-          </p>
-        </div>
-
-        <div className="glass-card p-4 space-y-3">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Buscar</label>
-              <Input
-                placeholder="Cliente, empresa, juego o referencia"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Creado desde</label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Creado hasta</label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Cliente</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-              >
-                <option value="">Todos</option>
-                {(data?.clients || []).map((client) => (
-                  <option key={client.user_id} value={client.user_id}>
-                    {client.username} {client.company ? `· ${client.company}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+    <AdminLayout
+      title="Superadmin · Resumen"
+      description="Vista ejecutiva del negocio con accesos rapidos a clientes, contratos y packs."
+      actions={
+        <>
+          <Button variant="outline" onClick={() => void load(buildFilters())} disabled={loading}>
+            <RefreshCcw className="h-4 w-4" />
+            {loading ? "Actualizando..." : "Actualizar"}
+          </Button>
+          <Button variant="glow" asChild>
+            <Link to="/admin/clients">Gestionar clientes</Link>
+          </Button>
+        </>
+      }
+    >
+      <section className="glass-card space-y-4 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="flex-1">
+            <label className="mb-2 block text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Buscar
+            </label>
+            <Input
+              placeholder="Cliente, empresa, juego o referencia"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Fecha de evento desde</label>
-              <Input type="date" value={eventDateFrom} onChange={(e) => setEventDateFrom(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Fecha de evento hasta</label>
-              <Input type="date" value={eventDateTo} onChange={(e) => setEventDateTo(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Juego</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={gameSlug}
-                onChange={(e) => setGameSlug(e.target.value)}
-              >
-                <option value="">Todos</option>
-                {(data?.options.games || []).map((game) => (
-                  <option key={game.slug} value={game.slug}>
-                    {game.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Estado contrato</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={contractStatus}
-                onChange={(e) => setContractStatus(e.target.value)}
-              >
-                <option value="">Todos</option>
-                {(data?.options.contract_statuses || []).map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Tipo transacción</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={transactionKind}
-                onChange={(e) => setTransactionKind(e.target.value)}
-              >
-                <option value="">Todos</option>
-                {(data?.options.transaction_kinds || []).map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="mb-2 block text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Creado desde
+            </label>
+            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-end">
-            <div>
-              <label className="text-xs text-muted-foreground">Estado recarga</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={topupStatus}
-                onChange={(e) => setTopupStatus(e.target.value)}
-              >
-                <option value="">Todos</option>
-                {(data?.options.topup_statuses || []).map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="lg:col-span-4 flex gap-2">
-              <Button variant="glow" disabled={loading} onClick={applyFilters}>
-                {loading ? "Filtrando..." : "Aplicar filtros"}
-              </Button>
-              <Button variant="outline" disabled={loading} onClick={clearFilters}>
-                Limpiar
-              </Button>
-            </div>
+          <div>
+            <label className="mb-2 block text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Creado hasta
+            </label>
+            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="glow" disabled={loading} onClick={() => void load(buildFilters())}>
+              Aplicar filtros
+            </Button>
+            <Button
+              variant="outline"
+              disabled={loading}
+              onClick={() => {
+                setSearch("");
+                setDateFrom("");
+                setDateTo("");
+                void load();
+              }}
+            >
+              Limpiar
+            </Button>
           </div>
         </div>
+      </section>
 
-        {loading && <p className="text-sm text-muted-foreground">Cargando panel...</p>}
+      {loading ? <p className="text-sm text-muted-foreground">Cargando resumen...</p> : null}
 
-        {!loading && data && (
-          <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Clientes</p>
-                <p className="text-2xl font-bold">{data.summary.clients}</p>
-              </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Contratos</p>
-                <p className="text-2xl font-bold">{data.summary.contracts}</p>
-              </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Movimientos wallet</p>
-                <p className="text-2xl font-bold">{data.summary.ledger_entries}</p>
-              </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Recargas</p>
-                <p className="text-2xl font-bold">{data.summary.topups}</p>
-              </div>
-            </div>
+      {!loading && data ? (
+        <>
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AdminStatCard label="Clientes" value={data.summary.clients} hint="Usuarios activos en la plataforma" />
+            <AdminStatCard label="Contratos" value={data.summary.contracts} hint="Eventos registrados en el rango actual" />
+            <AdminStatCard label="Creditos netos" value={formatCredits(data.summary.credits_totals.neto)} hint="Recargas menos gastos y ajustes" />
+            <AdminStatCard label="ARS aprobados" value={formatArs(data.summary.topups_totals.ars_aprobado)} hint={`${data.summary.topups_totals.aprobados} recargas aprobadas`} />
+            <AdminStatCard label="Creditos recargados" value={formatCredits(data.summary.credits_totals.recargados)} />
+            <AdminStatCard label="Creditos gastados" value={formatCredits(data.summary.credits_totals.gastados)} />
+            <AdminStatCard label="Creditos ajustados" value={formatCredits(data.summary.credits_totals.ajustes)} />
+            <AdminStatCard label="Creditos aprobados" value={formatCredits(data.summary.topups_totals.creditos_aprobados)} />
+          </section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Créditos recargados</p>
-                <p className="text-xl font-bold">{formatCredits(data.summary.credits_totals.recargados)}</p>
+          <section className="grid gap-4 xl:grid-cols-3">
+            <Link to="/admin/clients" className="glass-card flex flex-col gap-4 p-5 transition-colors hover:border-primary/20 hover:bg-card/80">
+              <div className="flex items-center justify-between">
+                <div className="rounded-2xl border border-primary/15 bg-primary/10 p-3 text-primary">
+                  <Users className="h-5 w-5" />
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Créditos gastados</p>
-                <p className="text-xl font-bold">{formatCredits(data.summary.credits_totals.gastados)}</p>
-              </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Créditos netos</p>
-                <p className="text-xl font-bold">{formatCredits(data.summary.credits_totals.neto)}</p>
-              </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Recargas aprobadas</p>
-                <p className="text-xl font-bold">{data.summary.topups_totals.aprobados}</p>
-              </div>
-              <div className="glass-card p-4">
-                <p className="text-xs text-muted-foreground uppercase">Monto aprobado</p>
-                <p className="text-xl font-bold">{formatArs(data.summary.topups_totals.ars_aprobado)}</p>
-              </div>
-            </div>
-
-            <section className="glass-card p-4 space-y-4">
               <div>
-                <h2 className="text-lg font-semibold">Asignar créditos a clientes</h2>
+                <h2 className="text-lg font-semibold text-foreground">Clientes</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Ajuste manual con asiento en wallet para soporte comercial o compensaciones.
+                  Ver saldos, empresas y acreditar creditos con confirmacion.
                 </p>
               </div>
+            </Link>
 
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                <div>
-                  <label className="text-xs text-muted-foreground">Cliente</label>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={creditClientId}
-                    onChange={(e) => setCreditClientId(e.target.value)}
-                  >
-                    <option value="">Seleccionar cliente</option>
-                    {data.clients.map((client) => (
-                      <option key={client.user_id} value={client.user_id}>
-                        {client.username} {client.company ? `· ${client.company}` : ""}
-                      </option>
-                    ))}
-                  </select>
+            <Link to="/admin/contracts" className="glass-card flex flex-col gap-4 p-5 transition-colors hover:border-primary/20 hover:bg-card/80">
+              <div className="flex items-center justify-between">
+                <div className="rounded-2xl border border-primary/15 bg-primary/10 p-3 text-primary">
+                  <FolderOpen className="h-5 w-5" />
                 </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Contratos</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Controlar juegos vendidos, fechas de evento y estado de cada contrato.
+                </p>
+              </div>
+            </Link>
 
-                <div>
-                  <label className="text-xs text-muted-foreground">Créditos a acreditar</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={creditAmount}
-                    onChange={(e) => setCreditAmount(e.target.value)}
-                    placeholder="Ej: 50"
-                  />
+            <Link to="/admin/credit-packs" className="glass-card flex flex-col gap-4 p-5 transition-colors hover:border-primary/20 hover:bg-card/80">
+              <div className="flex items-center justify-between">
+                <div className="rounded-2xl border border-primary/15 bg-primary/10 p-3 text-primary">
+                  <Wallet className="h-5 w-5" />
                 </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Packs</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Ajustar creditos, descuentos y checkout sin perder claridad operativa.
+                </p>
+              </div>
+            </Link>
+          </section>
 
-                <div>
-                  <label className="text-xs text-muted-foreground">Motivo / referencia</label>
-                  <Input
-                    value={creditReason}
-                    onChange={(e) => setCreditReason(e.target.value)}
-                    placeholder="Bonificación comercial"
-                  />
+          <section className="grid gap-4 xl:grid-cols-3">
+            <div className="glass-card space-y-3 p-4 xl:col-span-1">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Ultimos contratos</h2>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/admin/contracts">Ver todos</Link>
+                </Button>
+              </div>
+              {recentContracts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay contratos para mostrar.</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentContracts.map((contract) => (
+                    <div key={contract.id} className="rounded-2xl border border-border bg-background/50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">#{contract.id} · {contract.game_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {contract.client_username} {contract.client_company ? `· ${contract.client_company}` : ""}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={statusClass(contract.estado)}>
+                          {formatContractStatus(contract.estado)}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">Evento: {formatEventDates(contract)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Creado: {formatAdminDate(contract.creado_en)}</p>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
 
-                <div className="flex items-end">
-                  <Button variant="glow" disabled={crediting} onClick={handleAssignCredits} className="w-full">
-                    {crediting ? "Acreditando..." : "Asignar créditos"}
-                  </Button>
+            <div className="glass-card space-y-3 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Ultimas recargas</h2>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{data.topups.length} cargadas</p>
+              </div>
+              {recentTopups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay recargas para mostrar.</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentTopups.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-border bg-background/50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">{item.username}</p>
+                          <p className="text-sm text-muted-foreground">{item.pack_name || "Sin pack"}</p>
+                        </div>
+                        <Badge variant="outline">{item.status_label || item.status}</Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {item.credits} creditos · {formatArs(item.amount_ars)}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatAdminDate(item.created_at)}</p>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            </section>
+              )}
+            </div>
 
-            <section className="glass-card p-4 space-y-3">
-              <h2 className="text-lg font-semibold">Contratos</h2>
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-2 pr-3">ID</th>
-                      <th className="py-2 pr-3">Cliente</th>
-                      <th className="py-2 pr-3">Empresa</th>
-                      <th className="py-2 pr-3">Juego</th>
-                      <th className="py-2 pr-3">Fechas evento</th>
-                      <th className="py-2 pr-3">Creado</th>
-                      <th className="py-2 pr-3">Estado</th>
-                      <th className="py-2 pr-3">Costo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.contracts.map((contract) => (
-                      <tr key={contract.id} className="border-t border-border">
-                        <td className="py-2 pr-3">{contract.id}</td>
-                        <td className="py-2 pr-3">{contract.client_username}</td>
-                        <td className="py-2 pr-3">{contract.client_company || "—"}</td>
-                        <td className="py-2 pr-3">{contract.game_name}</td>
-                        <td className="py-2 pr-3">{formatEventDates(contract)}</td>
-                        <td className="py-2 pr-3">{formatDate(contract.creado_en)}</td>
-                        <td className="py-2 pr-3">{contract.estado}</td>
-                        <td className="py-2 pr-3">{contract.costo_por_partida} créditos</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="glass-card space-y-3 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Ultimos movimientos</h2>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{data.transactions.length} cargados</p>
               </div>
-            </section>
-
-            <section className="glass-card p-4 space-y-3">
-              <h2 className="text-lg font-semibold">Clientes</h2>
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-2 pr-3">User</th>
-                      <th className="py-2 pr-3">Email</th>
-                      <th className="py-2 pr-3">Empresa</th>
-                      <th className="py-2 pr-3">Saldo</th>
-                      <th className="py-2 pr-3">Alta</th>
-                      <th className="py-2 pr-3">Acción rápida</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.clients.map((client) => (
-                      <tr key={client.user_id} className="border-t border-border">
-                        <td className="py-2 pr-3">{client.username}</td>
-                        <td className="py-2 pr-3">{client.email || "—"}</td>
-                        <td className="py-2 pr-3">{client.company || "—"}</td>
-                        <td className="py-2 pr-3">{client.wallet_balance} créditos</td>
-                        <td className="py-2 pr-3">{formatDate(client.joined_at)}</td>
-                        <td className="py-2 pr-3">
-                          <Button
-                            variant="outline"
-                            className="h-8 px-3"
-                            onClick={() => setCreditClientId(String(client.user_id))}
-                          >
-                            Seleccionar
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="glass-card p-4 space-y-3">
-              <h2 className="text-lg font-semibold">Historial de transacciones</h2>
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-2 pr-3">Fecha</th>
-                      <th className="py-2 pr-3">Cliente</th>
-                      <th className="py-2 pr-3">Empresa</th>
-                      <th className="py-2 pr-3">Tipo</th>
-                      <th className="py-2 pr-3">Monto</th>
-                      <th className="py-2 pr-3">Referencia</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.transactions.map((item) => (
-                      <tr key={`tx-${item.id}`} className="border-t border-border">
-                        <td className="py-2 pr-3">{formatDate(item.created_at)}</td>
-                        <td className="py-2 pr-3">{item.username}</td>
-                        <td className="py-2 pr-3">{item.company || "—"}</td>
-                        <td className="py-2 pr-3">{item.kind_label || item.kind}</td>
-                        <td className="py-2 pr-3">{formatCredits(item.amount)}</td>
-                        <td className="py-2 pr-3">
-                          {item.reference_type} · {item.reference_id}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="glass-card p-4 space-y-3">
-              <h2 className="text-lg font-semibold">Recargas</h2>
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-2 pr-3">Fecha</th>
-                      <th className="py-2 pr-3">Cliente</th>
-                      <th className="py-2 pr-3">Empresa</th>
-                      <th className="py-2 pr-3">Estado</th>
-                      <th className="py-2 pr-3">Pack</th>
-                      <th className="py-2 pr-3">Créditos</th>
-                      <th className="py-2 pr-3">Monto ARS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.topups.map((item) => (
-                      <tr key={`topup-${item.id}`} className="border-t border-border">
-                        <td className="py-2 pr-3">{formatDate(item.created_at)}</td>
-                        <td className="py-2 pr-3">{item.username}</td>
-                        <td className="py-2 pr-3">{item.company || "—"}</td>
-                        <td className="py-2 pr-3">{item.status_label || item.status}</td>
-                        <td className="py-2 pr-3">{item.pack_name || "—"}</td>
-                        <td className="py-2 pr-3">{item.credits}</td>
-                        <td className="py-2 pr-3">{formatArs(item.amount_ars)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
-      </main>
-    </div>
+              {recentTransactions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay movimientos para mostrar.</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentTransactions.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-border bg-background/50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">{item.username}</p>
+                          <p className="text-sm text-muted-foreground">{item.company || "Sin empresa"}</p>
+                        </div>
+                        <Badge variant="outline">{item.kind_label || item.kind}</Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {formatCredits(item.amount)} · {item.reference_type}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatAdminDate(item.created_at)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      ) : null}
+    </AdminLayout>
   );
 }

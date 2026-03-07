@@ -11,21 +11,22 @@ import Catalog from "./pages/Catalog";
 import MyGames from "./pages/MyGames";
 import ContractCustomization from "./pages/ContractCustomization";
 import Settings from "./pages/Settings";
-import BuyCredits from "./pages/BuyCredits"; 
+import BuyCredits from "./pages/BuyCredits";
 import NotFound from "./pages/NotFound";
 import AdminCreditPacks from "./pages/admin/AdminCreditPacks";
 import AdminOverview from "./pages/admin/AdminOverview";
-
+import AdminClients from "./pages/admin/AdminClients";
+import AdminContracts from "./pages/admin/AdminContracts";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/auth" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -34,28 +35,39 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Index />} />
       <Route path="/auth" element={<Auth />} />
-      <Route path="/dashboard" element={
-        <ProtectedRoute>
-          <Dashboard />
-        </ProtectedRoute>
-      } />
-      <Route path="/catalog" element={
-        <ProtectedRoute>
-          <Catalog />
-        </ProtectedRoute>
-      } />
-      <Route path="/my-games" element={
-        <ProtectedRoute>
-          <MyGames />
-        </ProtectedRoute>
-      } />
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/catalog"
+        element={
+          <ProtectedRoute>
+            <Catalog />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/my-games"
+        element={
+          <ProtectedRoute>
+            <MyGames />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/my-contracts" element={<Navigate to="/my-games" replace />} />
-      <Route path="/contracts/:id/customize" element={
-        <ProtectedRoute>
-          <ContractCustomization />
-        </ProtectedRoute>
-      } />
-      {/* ✅ NUEVO: Comprar créditos */}
+      <Route
+        path="/contracts/:id/customize"
+        element={
+          <ProtectedRoute>
+            <ContractCustomization />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/buy-credits"
         element={
@@ -64,7 +76,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/overview"
         element={
@@ -73,7 +84,22 @@ function AppRoutes() {
           </AdminRoute>
         }
       />
-
+      <Route
+        path="/admin/clients"
+        element={
+          <AdminRoute>
+            <AdminClients />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/contracts"
+        element={
+          <AdminRoute>
+            <AdminContracts />
+          </AdminRoute>
+        }
+      />
       <Route
         path="/admin/credit-packs"
         element={
@@ -82,7 +108,6 @@ function AppRoutes() {
           </AdminRoute>
         }
       />
-
       <Route
         path="/settings"
         element={
@@ -91,7 +116,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
